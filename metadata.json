@@ -1,0 +1,8 @@
+{
+  "name": "GLS – Gestão de Qualidade",
+  "description": "Sistema integrado de gestão de qualidade de rotas, motoristas e provedores GLS com monitoramento de metas em tempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

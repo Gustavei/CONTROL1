@@ -1,0 +1,170 @@
+{
+  "entities": {
+    "Route": {
+      "title": "Route",
+      "description": "Daily delivery route record with package volumes, incidences, and quality score",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date of route in YYYY-MM-DD format" },
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Contracted logistics provider" },
+        "driverId": { "type": "string", "maxLength": 100, "description": "Identifier of the driver assigned to route" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Name of the driver" },
+        "routeName": { "type": "string", "maxLength": 120, "description": "Descriptive route name" },
+        "routeNumber": { "type": "string", "maxLength": 50, "description": "Route identification code/number" },
+        "locality": { "type": "string", "maxLength": 100, "description": "City or territory sector" },
+        "volumes": { "type": "number", "description": "Total volumes loaded" },
+        "packages": { "type": "number", "description": "Total packages delivered" },
+        "incidences": { "type": "number", "description": "Total delivery incidences or failures" },
+        "quality": { "type": "number", "description": "Calculated quality percentage: ((packages - incidences) / packages) * 100" },
+        "notes": { "type": "string", "maxLength": 500, "description": "Optional observation or explanation" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["date", "provider", "driverName", "routeNumber", "locality", "volumes", "packages", "incidences", "quality"]
+    },
+    "Driver": {
+      "title": "Driver",
+      "description": "Registered driver under a specific provider",
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Associated provider" },
+        "name": { "type": "string", "maxLength": 100, "description": "Driver full name" },
+        "phone": { "type": "string", "maxLength": 30, "description": "Driver contact telephone" },
+        "status": { "type": "string", "enum": ["active", "inactive"], "description": "Operational status" },
+        "vehicleType": { "type": "string", "maxLength": 50, "description": "Vehicle type/category" },
+        "licensePlate": { "type": "string", "maxLength": 20, "description": "Vehicle license plate" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" }
+      },
+      "required": ["provider", "name", "status"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "Registered delivery van / furgoneta under a provider",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100, "description": "Vehicle nickname or name" },
+        "plate": { "type": "string", "maxLength": 20, "description": "License plate" },
+        "model": { "type": "string", "maxLength": 100, "description": "Van model and make" },
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Assigned logistics provider" },
+        "defaultDriverName": { "type": "string", "maxLength": 100, "description": "Default assigned driver" },
+        "initialOdometer": { "type": "number", "description": "Initial odometer reading when registered" },
+        "currentOdometer": { "type": "number", "description": "Current last recorded odometer" },
+        "fuelType": { "type": "string", "enum": ["Diesel S10", "Gasolina Comum", "Gasolina Aditivada", "Etanol", "GNV", "Arla 32"], "description": "Usual fuel type" },
+        "tankCapacity": { "type": "number", "description": "Tank capacity in liters" },
+        "status": { "type": "string", "enum": ["active", "maintenance", "inactive"], "description": "Operational status" },
+        "notes": { "type": "string", "maxLength": 500, "description": "Observations" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      },
+      "required": ["name", "plate", "model", "provider", "currentOdometer"]
+    },
+    "FuelLog": {
+      "title": "FuelLog",
+      "description": "Fuel expense and refueling record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date of fueling" },
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Logistics provider" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Driver who refueled" },
+        "vehiclePlate": { "type": "string", "maxLength": 20, "description": "Vehicle license plate" },
+        "vehicleModel": { "type": "string", "maxLength": 50, "description": "Vehicle model" },
+        "odometerKm": { "type": "number", "description": "Odometer reading in KM at fueling" },
+        "fuelType": { "type": "string", "enum": ["Diesel S10", "Gasolina Comum", "Gasolina Aditivada", "Etanol", "GNV", "Arla 32"], "description": "Type of fuel" },
+        "liters": { "type": "number", "description": "Liters of fuel pumped" },
+        "pricePerLiter": { "type": "number", "description": "Price per liter in BRL" },
+        "totalCost": { "type": "number", "description": "Total cost in BRL" },
+        "stationName": { "type": "string", "maxLength": 100, "description": "Gas station name" },
+        "receiptNumber": { "type": "string", "maxLength": 50, "description": "Receipt or invoice number" },
+        "notes": { "type": "string", "maxLength": 500, "description": "Observation notes" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["date", "provider", "vehiclePlate", "odometerKm", "fuelType", "liters", "totalCost"]
+    },
+    "MaintenanceLog": {
+      "title": "MaintenanceLog",
+      "description": "Vehicle maintenance, servicing and repair record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Service date" },
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Logistics provider" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Responsible driver" },
+        "vehiclePlate": { "type": "string", "maxLength": 20, "description": "Vehicle license plate" },
+        "vehicleModel": { "type": "string", "maxLength": 50, "description": "Vehicle model" },
+        "odometerKm": { "type": "number", "description": "Odometer reading at service" },
+        "type": { "type": "string", "enum": ["Preventiva", "Corretiva"], "description": "Maintenance type" },
+        "category": { "type": "string", "description": "Maintenance category (e.g. Óleo e Filtros, Freios, Pneus, Motor, etc.)" },
+        "description": { "type": "string", "maxLength": 500, "description": "Description of service performed" },
+        "cost": { "type": "number", "description": "Cost in BRL" },
+        "workshop": { "type": "string", "maxLength": 100, "description": "Workshop or provider" },
+        "invoiceNumber": { "type": "string", "maxLength": 50, "description": "Invoice number" },
+        "nextMaintenanceKm": { "type": "number", "description": "Estimated next maintenance KM" },
+        "nextMaintenanceDate": { "type": "string", "description": "Estimated next maintenance date" },
+        "status": { "type": "string", "enum": ["Concluída", "Agendada", "Em Andamento"], "description": "Status" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["date", "provider", "vehiclePlate", "type", "description", "cost"]
+    },
+    "MileageLog": {
+      "title": "MileageLog",
+      "description": "Daily route odometer and distance tracking record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date" },
+        "provider": { "type": "string", "enum": ["Oscar", "Tiago"], "description": "Logistics provider" },
+        "driverName": { "type": "string", "maxLength": 100, "description": "Driver name" },
+        "vehiclePlate": { "type": "string", "maxLength": 20, "description": "Vehicle license plate" },
+        "vehicleModel": { "type": "string", "maxLength": 50, "description": "Vehicle model" },
+        "routeNumber": { "type": "string", "maxLength": 50, "description": "Associated route code" },
+        "startKm": { "type": "number", "description": "Starting odometer in KM" },
+        "endKm": { "type": "number", "description": "Ending odometer in KM" },
+        "totalKm": { "type": "number", "description": "Total distance traveled in KM" },
+        "notes": { "type": "string", "maxLength": 500, "description": "Observation notes" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["date", "provider", "driverName", "vehiclePlate", "startKm", "endKm", "totalKm"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "General system configuration and viewer access controls",
+      "type": "object",
+      "properties": {
+        "contractualQualityGoal": { "type": "number", "description": "Target quality percentage (94%)" },
+        "warningQualityThreshold": { "type": "number", "description": "Warning quality threshold percentage (90%)" },
+        "viewerAccessCode": { "type": "string", "maxLength": 100, "description": "Token/code for public viewer link" },
+        "adminEmail": { "type": "string", "maxLength": 100, "description": "Primary administrator email" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["contractualQualityGoal", "warningQualityThreshold"]
+    }
+  },
+  "firestore": {
+    "/routes/{routeId}": {
+      "schema": "Route",
+      "description": "Collection of all daily delivery routes and quality records"
+    },
+    "/drivers/{driverId}": {
+      "schema": "Driver",
+      "description": "Collection of all registered drivers for Oscar and Tiago"
+    },
+    "/vehicles/{vehicleId}": {
+      "schema": "Vehicle",
+      "description": "Registered delivery vans (furgonetas) with mileage and fuel history"
+    },
+    "/fuel_logs/{logId}": {
+      "schema": "FuelLog",
+      "description": "Refueling records and fuel cost tracking"
+    },
+    "/maintenance_logs/{logId}": {
+      "schema": "MaintenanceLog",
+      "description": "Preventive and corrective maintenance and workshop services"
+    },
+    "/mileage_logs/{logId}": {
+      "schema": "MileageLog",
+      "description": "Daily vehicle odometer and mileage records"
+    },
+    "/settings/{settingId}": {
+      "schema": "Settings",
+      "description": "System configuration parameters"
+    }
+  }
+}
