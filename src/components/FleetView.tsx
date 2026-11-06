@@ -14,6 +14,7 @@ import {
   Search,
   Filter,
   FileSpreadsheet,
+  FileText,
   Edit2,
   Trash2,
   BarChart3,
@@ -48,6 +49,7 @@ interface FleetViewProps {
   onDeleteMileageLog: (id: string) => void;
   onOpenVehicleModal: (vehicle?: Vehicle) => void;
   onDeleteVehicle: (id: string) => void;
+  onOpenReportModal?: (category?: 'fleet' | 'routes') => void;
 }
 
 type FleetSubTab = 'overview' | 'vehicles' | 'mileage' | 'fuel' | 'maintenance';
@@ -67,6 +69,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
   onDeleteMileageLog,
   onOpenVehicleModal,
   onDeleteVehicle,
+  onOpenReportModal,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<FleetSubTab>('overview');
   const [providerFilter, setProviderFilter] = useState<'all' | ProviderName>('all');
@@ -388,6 +391,15 @@ export const FleetView: React.FC<FleetViewProps> = ({
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
             <span className="hidden sm:inline">Exportar CSV</span>
+          </button>
+
+          <button
+            onClick={() => onOpenReportModal && onOpenReportModal('fleet')}
+            className="flex items-center gap-1.5 bg-[#0057B8] hover:bg-blue-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-xs transition"
+            title="Gerar Relatório Oficial da Frota em PDF"
+          >
+            <FileText className="w-4 h-4 text-[#FFD100]" />
+            <span>Relatório PDF</span>
           </button>
 
           {isAdmin && (

@@ -175,28 +175,33 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       'Número da Rota',
       'Nome da Rota',
       'Localidade',
-      'Volumes',
-      'Pacotes',
+      'Saiu',
+      'Entregou',
       'Incidências',
       'Qualidade (%)',
       'Classificação',
       'Observações',
     ];
 
-    const rows = filteredRoutes.map((r) => [
-      r.date,
-      r.provider,
-      `"${r.driverName.replace(/"/g, '""')}"`,
-      `"${r.routeNumber}"`,
-      `"${r.routeName.replace(/"/g, '""')}"`,
-      `"${r.locality.replace(/"/g, '""')}"`,
-      r.volumes,
-      r.packages,
-      r.incidences,
-      r.quality.toFixed(2),
-      getQualityClassification(r.quality),
-      `"${(r.notes || '').replace(/"/g, '""')}"`,
-    ]);
+    const rows = filteredRoutes.map((r) => {
+      const delivered = r.deliveredPackages !== undefined
+        ? r.deliveredPackages
+        : Math.max(0, r.packages - r.incidences);
+      return [
+        r.date,
+        r.provider,
+        `"${r.driverName.replace(/"/g, '""')}"`,
+        `"${r.routeNumber}"`,
+        `"${r.routeName.replace(/"/g, '""')}"`,
+        `"${r.locality.replace(/"/g, '""')}"`,
+        r.packages,
+        delivered,
+        r.incidences,
+        r.quality.toFixed(2),
+        getQualityClassification(r.quality),
+        `"${(r.notes || '').replace(/"/g, '""')}"`,
+      ];
+    });
 
     const csvContent =
       '\uFEFF' +
@@ -518,19 +523,18 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                     </div>
                   </th>
                   <th
-                    onClick={() => toggleSort('volumes')}
-                    className="px-4 py-3 text-right cursor-pointer hover:bg-slate-100 whitespace-nowrap"
-                  >
-                    <div className="flex items-center justify-end gap-1">
-                      Vol. <ArrowUpDown className="w-3 h-3 text-slate-400" />
-                    </div>
-                  </th>
-                  <th
                     onClick={() => toggleSort('packages')}
                     className="px-4 py-3 text-right cursor-pointer hover:bg-slate-100 whitespace-nowrap"
                   >
                     <div className="flex items-center justify-end gap-1">
-                      Pacotes <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                      Saiu <ArrowUpDown className="w-3 h-3 text-slate-400" />
+                    </div>
+                  </th>
+                  <th
+                    className="px-4 py-3 text-right whitespace-nowrap"
+                  >
+                    <div className="flex items-center justify-end gap-1 text-emerald-700 font-bold">
+                      Entregou
                     </div>
                   </th>
                   <th
@@ -556,6 +560,9 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {sortedRoutes.map((route) => {
                   const classif = getQualityClassification(route.quality);
+                  const delivered = route.deliveredPackages !== undefined
+                    ? route.deliveredPackages
+                    : Math.max(0, route.packages - route.incidences);
                   return (
                     <tr key={route.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-4 py-2.5 font-medium whitespace-nowrap">
@@ -582,8 +589,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                       <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
                         {route.locality}
                       </td>
-                      <td className="px-4 py-2.5 text-right font-medium">{route.volumes}</td>
-                      <td className="px-4 py-2.5 text-right font-semibold">{route.packages}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-700">{route.packages}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{delivered}</td>
                       <td className="px-4 py-2.5 text-right font-bold text-red-600">
                         {route.incidences}
                       </td>

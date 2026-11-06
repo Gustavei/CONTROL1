@@ -428,8 +428,8 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                     <th className="px-4 py-3">Motorista</th>
                     <th className="px-4 py-3">Rota / Nº</th>
                     <th className="px-4 py-3">Localidade</th>
-                    <th className="px-4 py-3 text-right">Volumes</th>
-                    <th className="px-4 py-3 text-right">Pacotes</th>
+                    <th className="px-4 py-3 text-right">Saiu</th>
+                    <th className="px-4 py-3 text-right">Entregou</th>
                     <th className="px-4 py-3 text-right">Incidências</th>
                     <th className="px-4 py-3 text-right">Qualidade</th>
                     <th className="px-4 py-3 text-center">Status</th>
@@ -439,6 +439,9 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {providerRoutes.map((route) => {
                     const classif = getQualityClassification(route.quality);
+                    const delivered = route.deliveredPackages !== undefined
+                      ? route.deliveredPackages
+                      : Math.max(0, route.packages - route.incidences);
                     return (
                       <tr key={route.id} className="hover:bg-slate-50/80 transition">
                         <td className="px-4 py-2.5 font-medium whitespace-nowrap">
@@ -454,11 +457,11 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                         <td className="px-4 py-2.5 text-slate-600 whitespace-nowrap">
                           {route.locality}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-semibold">
-                          {route.volumes}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-semibold">
+                        <td className="px-4 py-2.5 text-right font-semibold text-slate-700">
                           {route.packages}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-bold text-emerald-700">
+                          {delivered}
                         </td>
                         <td className="px-4 py-2.5 text-right font-bold text-red-600">
                           {route.incidences}

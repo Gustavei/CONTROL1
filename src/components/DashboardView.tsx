@@ -352,15 +352,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-xs text-slate-600">
             <div>
-              <span className="block text-[10px] text-slate-400">Volumes</span>
+              <span className="block text-[10px] text-slate-400">Saiu</span>
               <span className="font-bold text-slate-800">
-                {oscarMetrics.totalVolumes.toLocaleString('pt-BR')}
+                {oscarMetrics.totalPackages.toLocaleString('pt-BR')}
               </span>
             </div>
             <div>
-              <span className="block text-[10px] text-slate-400">Pacotes</span>
-              <span className="font-bold text-slate-800">
-                {oscarMetrics.totalPackages.toLocaleString('pt-BR')}
+              <span className="block text-[10px] text-emerald-600 font-semibold">Entregou</span>
+              <span className="font-bold text-emerald-700">
+                {(oscarMetrics.totalPackages - oscarMetrics.totalIncidences).toLocaleString('pt-BR')}
               </span>
             </div>
             <div>
@@ -447,15 +447,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-xs text-slate-600">
             <div>
-              <span className="block text-[10px] text-slate-400">Volumes</span>
+              <span className="block text-[10px] text-slate-400">Saiu</span>
               <span className="font-bold text-slate-800">
-                {tiagoMetrics.totalVolumes.toLocaleString('pt-BR')}
+                {tiagoMetrics.totalPackages.toLocaleString('pt-BR')}
               </span>
             </div>
             <div>
-              <span className="block text-[10px] text-slate-400">Pacotes</span>
-              <span className="font-bold text-slate-800">
-                {tiagoMetrics.totalPackages.toLocaleString('pt-BR')}
+              <span className="block text-[10px] text-emerald-600 font-semibold">Entregou</span>
+              <span className="font-bold text-emerald-700">
+                {(tiagoMetrics.totalPackages - tiagoMetrics.totalIncidences).toLocaleString('pt-BR')}
               </span>
             </div>
             <div>
@@ -506,17 +506,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <Boxes className="w-5 h-5" />
+            <CheckCircle className="w-5 h-5" />
           </div>
           <div>
             <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              Volumes Totais
+              Pacotes Entregues
             </div>
-            <div className="text-xl font-extrabold text-slate-900">
-              {globalMetrics.totalVolumes.toLocaleString('pt-BR')}
+            <div className="text-xl font-extrabold text-emerald-700">
+              {(globalMetrics.totalPackages - globalMetrics.totalIncidences).toLocaleString('pt-BR')}
             </div>
             <div className="text-[10px] text-slate-500">
-              {globalMetrics.totalPackages.toLocaleString('pt-BR')} pacotes
+              de {globalMetrics.totalPackages.toLocaleString('pt-BR')} saídos ({globalMetrics.totalPackages > 0 ? (((globalMetrics.totalPackages - globalMetrics.totalIncidences) / globalMetrics.totalPackages) * 100).toFixed(1) : 0}%)
             </div>
           </div>
         </div>
@@ -657,15 +657,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Pacotes Entregues:</span>
+                  <span className="text-slate-600">Pacotes que Saíram:</span>
                   <span className="font-bold text-slate-800">
                     {oscarMetrics.totalPackages.toLocaleString('pt-BR')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Volumes Totais:</span>
-                  <span className="font-bold text-slate-800">
-                    {oscarMetrics.totalVolumes.toLocaleString('pt-BR')}
+                  <span className="text-emerald-700 font-semibold">Pacotes Entregues:</span>
+                  <span className="font-bold text-emerald-700">
+                    {(oscarMetrics.totalPackages - oscarMetrics.totalIncidences).toLocaleString('pt-BR')}
                   </span>
                 </div>
                 <div className="flex justify-between text-red-600 font-semibold">
@@ -695,15 +695,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Pacotes Entregues:</span>
+                  <span className="text-slate-600">Pacotes que Saíram:</span>
                   <span className="font-bold text-slate-800">
                     {tiagoMetrics.totalPackages.toLocaleString('pt-BR')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-slate-600">Volumes Totais:</span>
-                  <span className="font-bold text-slate-800">
-                    {tiagoMetrics.totalVolumes.toLocaleString('pt-BR')}
+                  <span className="text-emerald-700 font-semibold">Pacotes Entregues:</span>
+                  <span className="font-bold text-emerald-700">
+                    {(tiagoMetrics.totalPackages - tiagoMetrics.totalIncidences).toLocaleString('pt-BR')}
                   </span>
                 </div>
                 <div className="flex justify-between text-red-600 font-semibold">

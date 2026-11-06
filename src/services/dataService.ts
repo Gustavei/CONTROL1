@@ -177,9 +177,14 @@ export function subscribeMileageLogs(
 export async function addRoute(route: Omit<RouteRecord, 'id' | 'createdAt'>): Promise<string> {
   const id = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
   const quality = calculateQuality(route.packages, route.incidences);
+  const deliveredPackages = route.deliveredPackages !== undefined
+    ? route.deliveredPackages
+    : Math.max(0, route.packages - route.incidences);
   const newRoute: RouteRecord = {
     ...route,
     id,
+    volumes: route.volumes ?? route.packages,
+    deliveredPackages,
     quality,
     createdAt: new Date().toISOString(),
   };
@@ -196,9 +201,12 @@ export async function addRoute(route: Omit<RouteRecord, 'id' | 'createdAt'>): Pr
 export async function updateRoute(id: string, updates: Partial<RouteRecord>): Promise<void> {
   try {
     let finalUpdates = { ...updates, updatedAt: new Date().toISOString() };
+    if (updates.packages !== undefined && updates.deliveredPackages !== undefined) {
+      finalUpdates.incidences = Math.max(0, updates.packages - updates.deliveredPackages);
+    }
     if (updates.packages !== undefined || updates.incidences !== undefined) {
       const pkgs = updates.packages ?? 1;
-      const incs = updates.incidences ?? 0;
+      const incs = finalUpdates.incidences ?? updates.incidences ?? 0;
       finalUpdates.quality = calculateQuality(pkgs, incs);
     }
     await updateDoc(doc(db, ROUTES_COLLECTION, id), sanitizeData(finalUpdates));

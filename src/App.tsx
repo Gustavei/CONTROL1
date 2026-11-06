@@ -89,6 +89,7 @@ export default function App() {
   const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [reportModalCategory, setReportModalCategory] = useState<'routes' | 'fleet'>('routes');
   const [targetProviderForModal, setTargetProviderForModal] = useState<ProviderName>('Oscar');
 
   // Fleet & Vehicle Modals state
@@ -364,7 +365,10 @@ export default function App() {
           setDriverModalOpen(true);
         }}
         onOpenShareModal={() => setShareModalOpen(true)}
-        onOpenReportModal={() => setReportModalOpen(true)}
+        onOpenReportModal={() => {
+          setReportModalCategory(activeTab === 'fleet' ? 'fleet' : 'routes');
+          setReportModalOpen(true);
+        }}
         onToggleAdminMode={(enable) => setIsAdmin(enable)}
       />
 
@@ -373,6 +377,7 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={(tab) => {
           if (tab === 'reports') {
+            setReportModalCategory(activeTab === 'fleet' ? 'fleet' : 'routes');
             setReportModalOpen(true);
           } else {
             setActiveTab(tab);
@@ -514,6 +519,10 @@ export default function App() {
                   setVehicleModalOpen(true);
                 }}
                 onDeleteVehicle={handleDeleteVehicle}
+                onOpenReportModal={(cat) => {
+                  setReportModalCategory(cat || 'fleet');
+                  setReportModalOpen(true);
+                }}
               />
             )}
           </>
@@ -610,6 +619,11 @@ export default function App() {
         onClose={() => setReportModalOpen(false)}
         routes={routes}
         drivers={drivers}
+        vehicles={vehicles}
+        mileageLogs={mileageLogs}
+        fuelLogs={fuelLogs}
+        maintenanceLogs={maintenanceLogs}
+        initialCategory={reportModalCategory}
       />
 
       {/* Footer */}

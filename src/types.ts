@@ -9,9 +9,10 @@ export interface RouteRecord {
   routeName: string;
   routeNumber: string;
   locality: string;
-  volumes: number;
-  packages: number;
-  incidences: number;
+  volumes?: number; // Descontinuado
+  packages: number; // Quantidade que saiu
+  deliveredPackages?: number; // Quantidade que entregou
+  incidences: number; // Quantidade de incidências (saiu - entregou)
   quality: number; // percentage: ((packages - incidences) / packages) * 100
   notes?: string;
   createdAt: string;
