@@ -1,16 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   Truck,
   PlusCircle,
   Phone,
-  CheckCircle,
-  AlertTriangle,
-  XCircle,
   Edit2,
   Trash2,
-  Award,
-  Layers,
   Search,
 } from 'lucide-react';
 import {
@@ -24,6 +19,7 @@ import {
   computeAggregateMetrics,
   computeDriverRankings,
 } from '../utils/analytics.ts';
+import { formatDateBR } from '../utils/date.ts';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
 
 interface ProviderViewProps {
@@ -48,42 +44,40 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
   onDeleteRoute,
 }) => {
   const [driverSearch, setDriverSearch] = useState('');
+  const [routeSearch, setRouteSearch] = useState('');
+  const [routeStatusFilter, setRouteStatusFilter] = useState<'all' | 'VERDE' | 'AMARELO' | 'VERMELHO'>('all');
   const [activeTab, setActiveTab] = useState<'drivers' | 'routes'>('drivers');
   const [driverToDelete, setDriverToDelete] = useState<Driver | null>(null);
   const [routeToDelete, setRouteToDelete] = useState<RouteRecord | null>(null);
 
-  // Filter routes for this provider
-  const providerRoutes = React.useMemo(
+  const providerRoutes = useMemo(
     () => routes.filter((r) => r.provider === providerName),
     [routes, providerName]
   );
 
-  // Filter drivers for this provider
-  const providerDrivers = React.useMemo(
+  const providerDrivers = useMemo(
     () => drivers.filter((d) => d.provider === providerName),
     [drivers, providerName]
   );
 
-  // Aggregate metrics
-  const metrics = React.useMemo(
+  const metrics = useMemo(
     () => computeAggregateMetrics(providerRoutes),
     [providerRoutes]
   );
 
-  // Driver rankings for this provider
-  const driverRankings = React.useMemo(
+  const driverRankings = useMemo(
     () => computeDriverRankings(providerRoutes),
     [providerRoutes]
   );
 
-  // Calculate individual stats per driver
-  const driverStatsMap = React.useMemo(() => {
-    const map = new Map<string, { quality: number; routes: number; packages: number; incidences: number }>();
+  const driverStatsMap = useMemo(() => {
+    const map = new Map<string, { quality: number; routes: number; packages: number; delivered: number; incidences: number }>();
     driverRankings.forEach((dr) => {
       map.set(dr.label.toLowerCase().trim(), {
         quality: dr.quality,
         routes: dr.totalRoutes,
         packages: dr.totalPackages,
+        delivered: Math.max(0, dr.totalPackages - dr.totalIncidences),
         incidences: dr.totalIncidences,
       });
     });
@@ -97,19 +91,41 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
       (d.licensePlate && d.licensePlate.toLowerCase().includes(driverSearch.toLowerCase()))
   );
 
+  const filteredRoutes = useMemo(() => {
+    return providerRoutes.filter((r) => {
+      if (routeStatusFilter !== 'all') {
+        if (getQualityClassification(r.quality) !== routeStatusFilter) return false;
+      }
+      if (routeSearch.trim()) {
+        const term = routeSearch.toLowerCase();
+        return (
+          r.driverName.toLowerCase().includes(term) ||
+          r.routeNumber.toLowerCase().includes(term) ||
+          r.routeName.toLowerCase().includes(term) ||
+          r.locality.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
+  }, [providerRoutes, routeSearch, routeStatusFilter]);
+
   const isOscar = providerName === 'Oscar';
+  const totalDelivered = Math.max(0, metrics.totalPackages - metrics.totalIncidences);
+  const deliveryRate = metrics.totalPackages > 0
+    ? ((totalDelivered / metrics.totalPackages) * 100).toFixed(1)
+    : '0.0';
 
   return (
     <div className="space-y-6">
       {/* Provider Hero Card */}
       <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
         <div
-          className={`h-3 w-full ${isOscar ? 'bg-[#0057B8]' : 'bg-[#FFD100]'}`}
+          className={`h-2.5 w-full ${isOscar ? 'bg-[#0057B8]' : 'bg-[#FFD100]'}`}
         />
         <div className="p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div
-              className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl shadow-inner ${
+              className={`w-14 h-14 rounded-xl flex items-center justify-center font-black text-2xl shadow-inner shrink-0 ${
                 isOscar
                   ? 'bg-[#0057B8] text-white'
                   : 'bg-[#FFD100] text-[#002B5C] border border-amber-300'
@@ -118,11 +134,11 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
               {providerName.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-2xl font-black text-[#002B5C] tracking-tight">
                   Painel do Provedor: {providerName}
                 </h2>
-                <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 tabular-nums">
                   {providerDrivers.length} Motoristas Cadastrados
                 </span>
               </div>
@@ -136,7 +152,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
             {isAdmin && (
               <button
                 onClick={() => onOpenDriverModal()}
-                className="flex items-center gap-1.5 bg-[#0057B8] hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-3 py-2 rounded-lg shadow-xs transition"
+                className="flex items-center gap-1.5 bg-[#0057B8] hover:bg-blue-700 text-white font-bold text-xs sm:text-sm px-3.5 py-2 rounded-lg shadow-xs transition whitespace-nowrap"
               >
                 <PlusCircle className="w-4 h-4 text-[#FFD100]" />
                 Cadastrar Motorista
@@ -152,32 +168,37 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
               Qualidade Geral
             </span>
             <div className="flex items-baseline gap-2 mt-1">
-              <span
-                className={`text-2xl font-extrabold ${
-                  metrics.classification === 'VERDE'
-                    ? 'text-emerald-600'
-                    : metrics.classification === 'AMARELO'
-                    ? 'text-amber-500'
-                    : 'text-red-600'
-                }`}
-              >
-                {metrics.qualityPercentage.toFixed(2)}%
-              </span>
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                  metrics.classification === 'VERDE'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : metrics.classification === 'AMARELO'
-                    ? 'bg-amber-100 text-amber-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
-              >
-                {metrics.classification}
-              </span>
+              {metrics.totalRoutes === 0 ? (
+                <span className="text-2xl font-extrabold text-slate-300 tabular-nums">--%</span>
+              ) : (
+                <>
+                  <span
+                    className={`text-2xl font-extrabold tabular-nums ${
+                      metrics.classification === 'VERDE'
+                        ? 'text-emerald-600'
+                        : metrics.classification === 'AMARELO'
+                        ? 'text-amber-500'
+                        : 'text-red-600'
+                    }`}
+                  >
+                    {metrics.qualityPercentage.toFixed(2)}%
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                      metrics.classification === 'VERDE'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : metrics.classification === 'AMARELO'
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
+                  >
+                    {metrics.classification}
+                  </span>
+                </>
+              )}
             </div>
-            <span className="text-[10px] text-slate-500">
-              Meta: {CONTRACTUAL_GOAL}% ({metrics.deltaToGoal >= 0 ? '+' : ''}
-              {metrics.deltaToGoal}%)
+            <span className="text-[10px] text-slate-500 tabular-nums">
+              Meta: {CONTRACTUAL_GOAL}% ({metrics.totalRoutes > 0 ? `${metrics.deltaToGoal >= 0 ? '+' : ''}${metrics.deltaToGoal}%` : 'sem rotas'})
             </span>
           </div>
 
@@ -185,7 +206,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
               Total de Rotas
             </span>
-            <div className="text-2xl font-extrabold text-slate-800 mt-1">
+            <div className="text-2xl font-extrabold text-slate-800 mt-1 tabular-nums">
               {metrics.totalRoutes}
             </div>
             <span className="text-[10px] text-slate-500">rotas registradas</span>
@@ -193,13 +214,13 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
 
           <div className="sm:px-4">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Pacotes Entregues
+              Entregas (Sucesso)
             </span>
-            <div className="text-2xl font-extrabold text-slate-800 mt-1">
-              {metrics.totalPackages.toLocaleString('pt-BR')}
+            <div className="text-2xl font-extrabold text-emerald-700 mt-1 tabular-nums">
+              {totalDelivered.toLocaleString('pt-BR')}
             </div>
-            <span className="text-[10px] text-slate-500">
-              {metrics.totalVolumes.toLocaleString('pt-BR')} volumes
+            <span className="text-[10px] text-slate-500 tabular-nums">
+              de {metrics.totalPackages.toLocaleString('pt-BR')} saídos ({deliveryRate}%)
             </span>
           </div>
 
@@ -207,10 +228,10 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
               Incidências
             </span>
-            <div className="text-2xl font-extrabold text-red-600 mt-1">
+            <div className="text-2xl font-extrabold text-red-600 mt-1 tabular-nums">
               {metrics.totalIncidences}
             </div>
-            <span className="text-[10px] text-slate-500">
+            <span className="text-[10px] text-slate-500 tabular-nums">
               Taxa:{' '}
               {metrics.totalPackages > 0
                 ? ((metrics.totalIncidences / metrics.totalPackages) * 100).toFixed(2)
@@ -223,7 +244,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
               Motoristas Ativos
             </span>
-            <div className="text-2xl font-extrabold text-[#0057B8] mt-1">
+            <div className="text-2xl font-extrabold text-[#0057B8] mt-1 tabular-nums">
               {providerDrivers.filter((d) => d.status === 'active').length} / {providerDrivers.length}
             </div>
             <span className="text-[10px] text-slate-500">em operação</span>
@@ -261,7 +282,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
       {/* Tab 1: Motoristas */}
       {activeTab === 'drivers' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-lg border border-slate-200">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
@@ -269,11 +290,11 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                 value={driverSearch}
                 onChange={(e) => setDriverSearch(e.target.value)}
                 placeholder="Buscar motorista, telefone ou placa..."
-                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
+                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
               />
             </div>
 
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-slate-500 tabular-nums">
               Exibindo <strong>{filteredDrivers.length}</strong> motorista(s) de {providerName}
             </div>
           </div>
@@ -287,7 +308,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                     onClick={() => onOpenDriverModal()}
                     className="text-xs font-bold text-[#0057B8] hover:underline"
                   >
-                    + Cadastrar o primeiro motorista para {providerName}
+                    + Cadastrar motorista para {providerName}
                   </button>
                 </div>
               )}
@@ -306,7 +327,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                     className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 flex flex-col justify-between hover:border-slate-300 transition"
                   >
                     <div>
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
                             {driver.name}
@@ -323,10 +344,9 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                           </div>
                         </div>
 
-                        {/* Individual Quality Badge */}
-                        <div className="text-right">
+                        <div className="text-right shrink-0">
                           <span
-                            className={`text-sm font-extrabold px-2 py-0.5 rounded ${
+                            className={`text-sm font-extrabold px-2 py-0.5 rounded tabular-nums ${
                               !hasRoutes
                                 ? 'bg-slate-100 text-slate-600'
                                 : classif === 'VERDE'
@@ -348,8 +368,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                         </div>
                       )}
 
-                      {/* Performance metrics */}
-                      <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-[11px]">
+                      <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-[11px] tabular-nums">
                         <div className="bg-slate-50 p-1.5 rounded">
                           <span className="text-slate-400 block text-[9px]">Rotas</span>
                           <span className="font-bold text-slate-800">
@@ -357,9 +376,9 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                           </span>
                         </div>
                         <div className="bg-slate-50 p-1.5 rounded">
-                          <span className="text-slate-400 block text-[9px]">Pacotes</span>
-                          <span className="font-bold text-slate-800">
-                            {stats?.packages ?? 0}
+                          <span className="text-slate-400 block text-[9px]">Entregues</span>
+                          <span className="font-bold text-emerald-700">
+                            {stats?.delivered ?? 0}
                           </span>
                         </div>
                         <div className="bg-slate-50 p-1.5 rounded">
@@ -371,7 +390,6 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Actions for Admin */}
                     {isAdmin && (
                       <div className="mt-4 pt-2 border-t border-slate-100 flex justify-end gap-2 text-xs">
                         <button
@@ -401,23 +419,53 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
       {/* Tab 2: Rotas do Provedor */}
       {activeTab === 'routes' && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-          <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-            <h3 className="font-bold text-slate-800 text-sm">
-              Histórico de Rotas - Provedor {providerName}
-            </h3>
-            {isAdmin && (
-              <button
-                onClick={() => onOpenRouteModal()}
-                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded shadow-xs"
+          <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm">
+                Histórico de Rotas &bull; Provedor {providerName}
+              </h3>
+              <p className="text-xs text-slate-500">
+                Filtre por motorista, número da rota, localidade ou faixa de qualidade
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 sm:w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={routeSearch}
+                  onChange={(e) => setRouteSearch(e.target.value)}
+                  placeholder="Buscar rota, motorista..."
+                  className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
+                />
+              </div>
+
+              <select
+                value={routeStatusFilter}
+                onChange={(e) => setRouteStatusFilter(e.target.value as any)}
+                className="px-2.5 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
               >
-                + Nova Rota para {providerName}
-              </button>
-            )}
+                <option value="all">Todas Faixas</option>
+                <option value="VERDE">VERDE (&gt;94%)</option>
+                <option value="AMARELO">AMARELO (90-94%)</option>
+                <option value="VERMELHO">VERMELHO (&lt;90%)</option>
+              </select>
+
+              {isAdmin && (
+                <button
+                  onClick={() => onOpenRouteModal()}
+                  className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-xs whitespace-nowrap"
+                >
+                  + Nova Rota
+                </button>
+              )}
+            </div>
           </div>
 
-          {providerRoutes.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">
-              Nenhuma rota registrada para {providerName}.
+          {filteredRoutes.length === 0 ? (
+            <div className="p-8 text-center text-slate-500 text-xs">
+              Nenhuma rota registrada para {providerName} com os filtros atuais.
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -436,8 +484,8 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                     {isAdmin && <th className="px-4 py-3 text-center">Ações</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {providerRoutes.map((route) => {
+                <tbody className="divide-y divide-slate-100 tabular-nums">
+                  {filteredRoutes.map((route) => {
                     const classif = getQualityClassification(route.quality);
                     const delivered = route.deliveredPackages !== undefined
                       ? route.deliveredPackages
@@ -445,7 +493,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
                     return (
                       <tr key={route.id} className="hover:bg-slate-50/80 transition">
                         <td className="px-4 py-2.5 font-medium whitespace-nowrap">
-                          {route.date.split('-').reverse().join('/')}
+                          {formatDateBR(route.date)}
                         </td>
                         <td className="px-4 py-2.5 font-bold text-slate-900 whitespace-nowrap">
                           {route.driverName}
@@ -542,7 +590,7 @@ export const ProviderView: React.FC<ProviderViewProps> = ({
         isOpen={routeToDelete !== null}
         title="Excluir Rota"
         message="Tem certeza que deseja excluir esta rota? Os dados serão removidos permanentemente da nuvem."
-        itemName={routeToDelete ? `${routeToDelete.routeNumber} - ${routeToDelete.routeName} (${routeToDelete.date.split('-').reverse().join('/')})` : undefined}
+        itemName={routeToDelete ? `${routeToDelete.routeNumber} - ${routeToDelete.routeName} (${formatDateBR(routeToDelete.date)})` : undefined}
         onConfirm={async () => {
           if (routeToDelete) {
             await onDeleteRoute(routeToDelete.id);

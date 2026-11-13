@@ -37,6 +37,16 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   const providerDrivers = drivers.filter((d) => d.provider === provider && d.status === 'active');
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, saving, onClose]);
+
+  useEffect(() => {
+    setErrorMsg('');
     if (editingVehicle) {
       setName(editingVehicle.name);
       setPlate(editingVehicle.plate);
@@ -110,7 +120,12 @@ export const VehicleModal: React.FC<VehicleModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header GLS */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">

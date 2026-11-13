@@ -22,6 +22,7 @@ import {
   calculateQuality,
   getQualityClassification,
 } from '../types.ts';
+import { getLocalDateString } from '../utils/date.ts';
 
 interface RouteModalProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   drivers,
   defaultProvider = 'Oscar',
 }) => {
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(getLocalDateString());
   const [provider, setProvider] = useState<ProviderName>(defaultProvider);
   const [driverName, setDriverName] = useState<string>('');
   const [driverId, setDriverId] = useState<string>('');
@@ -62,6 +63,16 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   );
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, saving, onClose]);
+
+  useEffect(() => {
+    setErrorMsg('');
     if (editingRoute) {
       setDate(editingRoute.date);
       setProvider(editingRoute.provider);
@@ -71,14 +82,13 @@ export const RouteModal: React.FC<RouteModalProps> = ({
       setRouteName(editingRoute.routeName);
       setLocality(editingRoute.locality);
       setPackages(editingRoute.packages);
-      // If deliveredPackages was saved, use it; otherwise compute packages - incidences
       const delivered = editingRoute.deliveredPackages !== undefined
         ? editingRoute.deliveredPackages
         : Math.max(0, editingRoute.packages - editingRoute.incidences);
       setDeliveredPackages(delivered);
       setNotes(editingRoute.notes || '');
     } else {
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getLocalDateString());
       setProvider(defaultProvider);
       setRouteNumber('');
       setRouteName('');
@@ -182,7 +192,12 @@ export const RouteModal: React.FC<RouteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-xl w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">

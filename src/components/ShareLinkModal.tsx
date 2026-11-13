@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Share2, Copy, Check, X, QrCode, Globe, ShieldAlert, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Share2, Copy, Check, X, Globe, ExternalLink, QrCode } from 'lucide-react';
+import QRCode from 'qrcode';
 
 interface ShareLinkModalProps {
   isOpen: boolean;
@@ -11,12 +12,33 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
+
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const viewerUrl = `${origin}?view=public`;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    QRCode.toDataURL(viewerUrl, {
+      width: 240,
+      margin: 1,
+      color: {
+        dark: '#002B5C',
+        light: '#FFFFFF',
+      },
+    })
+      .then((url) => setQrDataUrl(url))
+      .catch((err) => console.error('QR generation failed:', err));
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, viewerUrl, onClose]);
 
   if (!isOpen) return null;
-
-  // Construct pure viewer link
-  const origin = window.location.origin;
-  const viewerUrl = `${origin}?view=public`;
 
   const handleCopy = async () => {
     try {
@@ -29,7 +51,12 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">
@@ -49,6 +76,7 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
           <button
             onClick={onClose}
             className="text-blue-100 hover:text-white p-1 rounded-md"
+            aria-label="Fechar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -61,7 +89,7 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
             <div>
               <span className="font-bold">Acesso Somente Leitura Garantido:</span>
               <p className="mt-0.5 text-blue-800 leading-relaxed">
-                Quem acessar este link poderá acompanhar todos os dados, gráficos, rankings e relatórios em tempo real, sem permissão para cadastrar, editar ou excluir qualquer informação.
+                Quem acessar este link poderá acompanhar todos os dados, gráficos, rankings e relatórios em tempo real, sem permissão para cadastrar, editar ou excluir informações.
               </p>
             </div>
           </div>
@@ -96,20 +124,35 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
             </div>
           </div>
 
-          {/* Quick QR Code representation */}
+          {/* Real scannable QR Code */}
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-4">
-            <div className="w-20 h-20 bg-white p-1.5 rounded-lg border border-slate-300 flex items-center justify-center shrink-0 shadow-xs">
-              {/* High contrast QR Code vector preview */}
-              <div className="w-full h-full bg-[#002B5C] rounded flex flex-col items-center justify-center text-white p-1 text-center">
-                <QrCode className="w-10 h-10 text-[#FFD100]" />
-                <span className="text-[7px] font-bold tracking-tighter">GLS VIEWER</span>
-              </div>
+            <div className="w-24 h-24 bg-white p-1.5 rounded-xl border border-slate-300 flex items-center justify-center shrink-0 shadow-xs">
+              {qrDataUrl ? (
+                <img
+                  src={qrDataUrl}
+                  alt="QR Code para acesso ao painel em modo visualizador"
+                  className="w-full h-full object-contain rounded"
+                />
+              ) : (
+                <QrCode className="w-10 h-10 text-[#002B5C]" />
+              )}
             </div>
-            <div className="text-xs text-slate-600">
-              <span className="font-bold text-slate-900 block mb-1">
-                Acesso Móvel via Smartphone:
+            <div className="text-xs text-slate-600 space-y-1.5">
+              <span className="font-bold text-slate-900 block">
+                Acesso Móvel via QR Code:
               </span>
-              Abra a câmera do celular no galpão para abrir o painel de qualidade diretamente.
+              <p className="leading-relaxed">
+                Aponte a câmera do celular no galpão para abrir o painel de qualidade em tempo real.
+              </p>
+              <a
+                href={viewerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 font-bold text-[#0057B8] hover:underline"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                Abrir Visualização em Nova Guia
+              </a>
             </div>
           </div>
         </div>
@@ -118,7 +161,7 @@ export const ShareLinkModal: React.FC<ShareLinkModalProps> = ({
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-900"
+            className="px-4 py-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-lg hover:bg-slate-200 transition"
           >
             Fechar
           </button>

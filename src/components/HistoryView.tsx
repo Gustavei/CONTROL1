@@ -3,14 +3,8 @@ import {
   Search,
   Filter,
   Calendar,
-  Truck,
-  Users,
-  Download,
   Edit2,
   Trash2,
-  CheckCircle,
-  AlertTriangle,
-  XCircle,
   RotateCcw,
   ArrowUpDown,
   FileSpreadsheet,
@@ -19,10 +13,14 @@ import {
   RouteRecord,
   Driver,
   ProviderName,
-  CONTRACTUAL_GOAL,
   getQualityClassification,
 } from '../types.ts';
 import { computeAggregateMetrics } from '../utils/analytics.ts';
+import {
+  getLocalDateString,
+  getDaysAgoDateString,
+  formatDateBR,
+} from '../utils/date.ts';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
 
 interface HistoryViewProps {
@@ -35,7 +33,7 @@ interface HistoryViewProps {
 }
 
 type PeriodPreset = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'last_month' | 'year' | 'custom';
-type SortField = 'date' | 'provider' | 'driverName' | 'routeNumber' | 'locality' | 'volumes' | 'packages' | 'incidences' | 'quality';
+type SortField = 'date' | 'provider' | 'driverName' | 'routeNumber' | 'locality' | 'packages' | 'deliveredPackages' | 'incidences' | 'quality';
 type SortOrder = 'asc' | 'desc';
 
 export const HistoryView: React.FC<HistoryViewProps> = ({
@@ -59,25 +57,21 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
-  // Handle Preset Change
+  // Handle Preset Change (local timezone safe)
   const handlePresetChange = (preset: PeriodPreset) => {
     setPeriodPreset(preset);
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString(today);
 
     if (preset === 'today') {
       setStartDate(todayStr);
       setEndDate(todayStr);
     } else if (preset === 'yesterday') {
-      const y = new Date();
-      y.setDate(y.getDate() - 1);
-      const yStr = y.toISOString().split('T')[0];
+      const yStr = getDaysAgoDateString(1, today);
       setStartDate(yStr);
       setEndDate(yStr);
     } else if (preset === 'week') {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      setStartDate(d.toISOString().split('T')[0]);
+      setStartDate(getDaysAgoDateString(7, today));
       setEndDate(todayStr);
     } else if (preset === 'month') {
       const startOfMonth = `${todayStr.substring(0, 7)}-01`;
@@ -86,8 +80,8 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     } else if (preset === 'last_month') {
       const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1);
       const lastDay = new Date(today.getFullYear(), today.getMonth(), 0);
-      setStartDate(prev.toISOString().split('T')[0]);
-      setEndDate(lastDay.toISOString().split('T')[0]);
+      setStartDate(getLocalDateString(prev));
+      setEndDate(getLocalDateString(lastDay));
     } else if (preset === 'year') {
       setStartDate(`${today.getFullYear()}-01-01`);
       setEndDate(todayStr);
@@ -135,8 +129,16 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   // Sort routes
   const sortedRoutes = useMemo(() => {
     return [...filteredRoutes].sort((a, b) => {
-      let valA: any = a[sortField];
-      let valB: any = b[sortField];
+      let valA: any;
+      let valB: any;
+
+      if (sortField === 'deliveredPackages') {
+        valA = a.deliveredPackages !== undefined ? a.deliveredPackages : Math.max(0, a.packages - a.incidences);
+        valB = b.deliveredPackages !== undefined ? b.deliveredPackages : Math.max(0, b.packages - b.incidences);
+      } else {
+        valA = a[sortField];
+        valB = b[sortField];
+      }
 
       if (typeof valA === 'string') {
         valA = valA.toLowerCase();
@@ -211,7 +213,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `GLS_Rotas_Historico_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `GLS_Rotas_Historico_${getLocalDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -402,7 +404,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       </div>
 
       {/* Filtered Result Metrics Summary Banner */}
-      <div className="bg-[#002B5C] text-white rounded-xl p-4 shadow-sm grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="bg-[#002B5C] text-white rounded-xl p-4 shadow-sm grid grid-cols-2 sm:grid-cols-5 gap-3 tabular-nums">
         <div>
           <span className="text-[10px] text-blue-200 font-bold uppercase tracking-wider block">
             Rotas Encontradas
@@ -411,18 +413,18 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
         </div>
         <div>
           <span className="text-[10px] text-blue-200 font-bold uppercase tracking-wider block">
-            Total Volumes
-          </span>
-          <span className="text-xl font-black">
-            {filteredMetrics.totalVolumes.toLocaleString('pt-BR')}
-          </span>
-        </div>
-        <div>
-          <span className="text-[10px] text-blue-200 font-bold uppercase tracking-wider block">
-            Total Pacotes
+            Saiu (Total)
           </span>
           <span className="text-xl font-black">
             {filteredMetrics.totalPackages.toLocaleString('pt-BR')}
+          </span>
+        </div>
+        <div>
+          <span className="text-[10px] text-emerald-300 font-bold uppercase tracking-wider block">
+            Entregues
+          </span>
+          <span className="text-xl font-black text-emerald-400">
+            {Math.max(0, filteredMetrics.totalPackages - filteredMetrics.totalIncidences).toLocaleString('pt-BR')}
           </span>
         </div>
         <div>
@@ -438,28 +440,34 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
             Qualidade Ponderada
           </span>
           <div className="flex items-center gap-2">
-            <span
-              className={`text-xl font-black ${
-                filteredMetrics.classification === 'VERDE'
-                  ? 'text-emerald-400'
-                  : filteredMetrics.classification === 'AMARELO'
-                  ? 'text-amber-400'
-                  : 'text-red-400'
-              }`}
-            >
-              {filteredMetrics.qualityPercentage.toFixed(2)}%
-            </span>
-            <span
-              className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${
-                filteredMetrics.classification === 'VERDE'
-                  ? 'bg-emerald-500/20 text-emerald-300'
-                  : filteredMetrics.classification === 'AMARELO'
-                  ? 'bg-amber-500/20 text-amber-300'
-                  : 'bg-red-500/20 text-red-300'
-              }`}
-            >
-              {filteredMetrics.classification}
-            </span>
+            {filteredRoutes.length === 0 ? (
+              <span className="text-xl font-black text-slate-400">--%</span>
+            ) : (
+              <>
+                <span
+                  className={`text-xl font-black ${
+                    filteredMetrics.classification === 'VERDE'
+                      ? 'text-emerald-400'
+                      : filteredMetrics.classification === 'AMARELO'
+                      ? 'text-amber-400'
+                      : 'text-red-400'
+                  }`}
+                >
+                  {filteredMetrics.qualityPercentage.toFixed(2)}%
+                </span>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                    filteredMetrics.classification === 'VERDE'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : filteredMetrics.classification === 'AMARELO'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'bg-red-500/20 text-red-300'
+                  }`}
+                >
+                  {filteredMetrics.classification}
+                </span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -531,10 +539,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                     </div>
                   </th>
                   <th
-                    className="px-4 py-3 text-right whitespace-nowrap"
+                    onClick={() => toggleSort('deliveredPackages')}
+                    className="px-4 py-3 text-right cursor-pointer hover:bg-slate-100 whitespace-nowrap"
                   >
                     <div className="flex items-center justify-end gap-1 text-emerald-700 font-bold">
-                      Entregou
+                      Entregou <ArrowUpDown className="w-3 h-3 text-emerald-600" />
                     </div>
                   </th>
                   <th
@@ -557,7 +566,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   {isAdmin && <th className="px-4 py-3 text-center whitespace-nowrap">Ações</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 tabular-nums">
                 {sortedRoutes.map((route) => {
                   const classif = getQualityClassification(route.quality);
                   const delivered = route.deliveredPackages !== undefined
@@ -566,7 +575,7 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   return (
                     <tr key={route.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-4 py-2.5 font-medium whitespace-nowrap">
-                        {route.date.split('-').reverse().join('/')}
+                        {formatDateBR(route.date)}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <span

@@ -106,7 +106,7 @@
     },
     "MileageLog": {
       "title": "MileageLog",
-      "description": "Daily route odometer and distance tracking record",
+      "description": "Daily morning odometer reading and day-to-day distance tracking record",
       "type": "object",
       "properties": {
         "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Date" },
@@ -115,9 +115,12 @@
         "vehiclePlate": { "type": "string", "maxLength": 20, "description": "Vehicle license plate" },
         "vehicleModel": { "type": "string", "maxLength": 50, "description": "Vehicle model" },
         "routeNumber": { "type": "string", "maxLength": 50, "description": "Associated route code" },
-        "startKm": { "type": "number", "description": "Starting odometer in KM" },
-        "endKm": { "type": "number", "description": "Ending odometer in KM" },
-        "totalKm": { "type": "number", "description": "Total distance traveled in KM" },
+        "startKm": { "type": "number", "description": "Morning odometer reading in KM" },
+        "endKm": { "type": "number", "description": "Compatibility odometer field in KM" },
+        "previousKm": { "type": "number", "description": "Previous morning odometer reading in KM" },
+        "previousDate": { "type": "string", "description": "Previous morning reading date" },
+        "totalKm": { "type": "number", "description": "Distance traveled from previous morning to current morning in KM" },
+        "readingType": { "type": "string", "enum": ["morning", "legacy"], "description": "Reading workflow type" },
         "notes": { "type": "string", "maxLength": 500, "description": "Observation notes" },
         "createdAt": { "type": "string", "description": "Creation timestamp" }
       },

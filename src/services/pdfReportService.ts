@@ -10,6 +10,7 @@ import {
   MaintenanceLog,
   MileageLog,
 } from '../types.ts';
+import { getLocalDateString } from '../utils/date.ts';
 
 export type ReportType =
   // Rotas & Qualidade
@@ -660,7 +661,7 @@ export function generatePdfReport(config: ReportConfig) {
     doc.text(`Página ${i} de ${totalPages}`, pageWidth - 26, pageHeight - 4.5);
   }
 
-  const filename = `GLS_Relatorio_Qualidade_${config.type}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const filename = `GLS_Relatorio_Qualidade_${config.type}_${getLocalDateString()}.pdf`;
   doc.save(filename);
 }
 
@@ -682,7 +683,8 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
     const vFuelLogs = config.fuelLogs.filter((f) => f.vehiclePlate.trim().toUpperCase() === pUpper);
 
     const vTotalKm = vKmLogs.reduce((acc, curr) => acc + (Number(curr.totalKm) || 0), 0);
-    const daysCount = vKmLogs.length;
+    const intervalLogs = vKmLogs.filter((m) => (Number(m.totalKm) || 0) > 0);
+    const daysCount = intervalLogs.length;
     const avgDailyKm = daysCount > 0 ? Number((vTotalKm / daysCount).toFixed(1)) : 0;
 
     let totalDist = 0;
@@ -1009,11 +1011,11 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
       });
     }
   } else if (config.type === 'fleet_mileage') {
-    // Sub-report: Quilometragem Diária
+    // Sub-report: Quilometragem Diária (Leitura da Manhã)
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(glsDarkBlue[0], glsDarkBlue[1], glsDarkBlue[2]);
-    doc.text('REGISTRO DIÁRIO DE ODÔMETRO (KM INICIAL & FINAL)', 14, currentY + 3);
+    doc.text('REGISTRO DIÁRIO DE QUILOMETRAGEM (LEITURA DA MANHÃ - DIA P/ DIA)', 14, currentY + 3);
 
     const mileageRows = config.mileageLogs.slice(0, 40).map((km) => {
       const stats = getVehicleStats(km.vehiclePlate);
@@ -1021,6 +1023,15 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
       if (stats.avgKmL !== null) {
         statusStr = stats.avgKmL < config.minEfficiencyThreshold ? 'ALERTA' : 'EFICIENTE';
       }
+      const isLegacy = km.readingType === 'legacy' || (km.previousKm === undefined && km.endKm > km.startKm);
+      const prevStr =
+        km.previousKm != null
+          ? `${km.previousKm.toLocaleString('pt-BR')} KM`
+          : isLegacy
+          ? `${km.startKm.toLocaleString('pt-BR')} KM`
+          : 'Base Inicial';
+      const curOdo = isLegacy ? km.endKm : km.startKm;
+      const distStr = km.totalKm > 0 ? `+${km.totalKm.toLocaleString('pt-BR')} KM` : 'Base (0 KM)';
 
       return [
         km.date.split('-').reverse().join('/'),
@@ -1028,9 +1039,9 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
         km.vehiclePlate,
         km.driverName,
         km.routeNumber || '-',
-        `${km.startKm.toLocaleString('pt-BR')} KM`,
-        `${km.endKm.toLocaleString('pt-BR')} KM`,
-        `${km.totalKm.toLocaleString('pt-BR')} KM`,
+        prevStr,
+        `${curOdo.toLocaleString('pt-BR')} KM`,
+        distStr,
         stats.avgKmL !== null ? `${stats.avgKmL} KM/L` : '-',
         statusStr,
       ];
@@ -1038,7 +1049,7 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
 
     autoTable(doc, {
       startY: currentY + 6,
-      head: [['Data', 'Provedor', 'Placa', 'Motorista', 'Rota', 'KM Inicial', 'KM Final', 'KM Rodados', 'Consumo Médio', 'Status']],
+      head: [['Data', 'Provedor', 'Placa', 'Motorista', 'Rota', 'Manhã Anterior', 'KM da Manhã', 'KM Rodados', 'Consumo Médio', 'Status']],
       body: mileageRows,
       theme: 'grid',
       styles: {
@@ -1167,6 +1178,6 @@ export function generateFleetPdfReport(config: FleetReportConfig) {
     doc.text(`Página ${i} de ${totalPages}`, pageWidth - 30, pageHeight - 5);
   }
 
-  const filename = `GLS_Relatorio_Frota_${config.type}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const filename = `GLS_Relatorio_Frota_${config.type}_${getLocalDateString()}.pdf`;
   doc.save(filename);
 }

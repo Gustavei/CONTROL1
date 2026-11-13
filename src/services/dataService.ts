@@ -21,6 +21,7 @@ import {
   MileageLog,
   calculateQuality,
 } from '../types.ts';
+import { getLocalDateString, getDaysAgoDateString } from '../utils/date.ts';
 
 const ROUTES_COLLECTION = 'routes';
 const DRIVERS_COLLECTION = 'drivers';
@@ -395,10 +396,44 @@ export async function addFuelLog(log: Omit<FuelLog, 'id' | 'createdAt'>): Promis
 
 export async function updateFuelLog(id: string, updates: Partial<FuelLog>): Promise<void> {
   try {
-    await updateDoc(doc(db, FUEL_COLLECTION, id), sanitizeData({
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    }));
+    const finalUpdates: Partial<FuelLog> = { ...updates, updatedAt: new Date().toISOString() };
+
+    if (
+      updates.odometerKm !== undefined &&
+      updates.previousOdometerKm !== undefined &&
+      updates.previousOdometerKm !== null
+    ) {
+      const dist = Number(updates.odometerKm) - Number(updates.previousOdometerKm);
+      if (dist > 0) {
+        finalUpdates.distanceSinceLastFuel = dist;
+        if (updates.liters && Number(updates.liters) > 0) {
+          finalUpdates.fuelEfficiencyKmL = Number((dist / Number(updates.liters)).toFixed(2));
+        }
+        if (updates.totalCost && Number(updates.totalCost) > 0) {
+          finalUpdates.costPerKm = Number((Number(updates.totalCost) / dist).toFixed(2));
+        }
+      }
+    }
+
+    await updateDoc(doc(db, FUEL_COLLECTION, id), sanitizeData(finalUpdates));
+
+    if (updates.vehicleId && updates.odometerKm !== undefined) {
+      try {
+        const vRef = doc(db, VEHICLES_COLLECTION, updates.vehicleId);
+        const vSnap = await getDoc(vRef);
+        if (vSnap.exists()) {
+          const vData = vSnap.data() as Vehicle;
+          if (Number(updates.odometerKm) > (Number(vData.currentOdometer) || 0)) {
+            await updateDoc(vRef, {
+              currentOdometer: Number(updates.odometerKm),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error updating vehicle odometer on fuel update:', err);
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `${FUEL_COLLECTION}/${id}`);
     throw error;
@@ -425,6 +460,25 @@ export async function addMaintenanceLog(log: Omit<MaintenanceLog, 'id' | 'create
 
   try {
     await setDoc(doc(db, MAINTENANCE_COLLECTION, id), sanitizeData(newLog));
+
+    if (log.vehicleId && Number(log.odometerKm) > 0) {
+      try {
+        const vRef = doc(db, VEHICLES_COLLECTION, log.vehicleId);
+        const vSnap = await getDoc(vRef);
+        if (vSnap.exists()) {
+          const vData = vSnap.data() as Vehicle;
+          if (Number(log.odometerKm) > (Number(vData.currentOdometer) || 0)) {
+            await updateDoc(vRef, {
+              currentOdometer: Number(log.odometerKm),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error updating vehicle odometer on maintenance:', err);
+      }
+    }
+
     return id;
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, `${MAINTENANCE_COLLECTION}/${id}`);
@@ -438,6 +492,24 @@ export async function updateMaintenanceLog(id: string, updates: Partial<Maintena
       ...updates,
       updatedAt: new Date().toISOString(),
     }));
+
+    if (updates.vehicleId && updates.odometerKm !== undefined && Number(updates.odometerKm) > 0) {
+      try {
+        const vRef = doc(db, VEHICLES_COLLECTION, updates.vehicleId);
+        const vSnap = await getDoc(vRef);
+        if (vSnap.exists()) {
+          const vData = vSnap.data() as Vehicle;
+          if (Number(updates.odometerKm) > (Number(vData.currentOdometer) || 0)) {
+            await updateDoc(vRef, {
+              currentOdometer: Number(updates.odometerKm),
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Error updating vehicle odometer on maintenance update:', err);
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `${MAINTENANCE_COLLECTION}/${id}`);
     throw error;
@@ -453,14 +525,75 @@ export async function deleteMaintenanceLog(id: string): Promise<void> {
   }
 }
 
-// Mileage Logs CRUD
+export async function getLastMileageLogForVehicle(
+  plate: string,
+  targetDate?: string,
+  beforeKm?: number,
+  excludeId?: string
+): Promise<MileageLog | null> {
+  try {
+    const snap = await getDocs(query(collection(db, MILEAGE_COLLECTION), orderBy('date', 'desc')));
+    const logs = snap.docs.map((d) => d.data() as MileageLog);
+    const plateUpper = plate.trim().toUpperCase();
+    const filtered = logs.filter((m) => {
+      if (excludeId && m.id === excludeId) return false;
+      if (!m.vehiclePlate || m.vehiclePlate.trim().toUpperCase() !== plateUpper) return false;
+      const mOdo = Math.max(Number(m.startKm) || 0, Number(m.endKm) || 0);
+      if (targetDate) {
+        if (m.date > targetDate) return false;
+        if (m.date === targetDate && beforeKm !== undefined && mOdo >= beforeKm) return false;
+      }
+      return true;
+    });
+    if (filtered.length === 0) return null;
+    filtered.sort((a, b) => {
+      const dateCmp = b.date.localeCompare(a.date);
+      if (dateCmp !== 0) return dateCmp;
+      const odoA = Math.max(Number(a.startKm) || 0, Number(a.endKm) || 0);
+      const odoB = Math.max(Number(b.startKm) || 0, Number(b.endKm) || 0);
+      if (odoB !== odoA) return odoB - odoA;
+      return (b.createdAt || '').localeCompare(a.createdAt || '');
+    });
+    return filtered[0];
+  } catch (err) {
+    console.error('Error fetching last mileage log:', err);
+    return null;
+  }
+}
+
+// Mileage Logs CRUD (Leitura matinal diária de um dia para o outro)
 export async function addMileageLog(log: Omit<MileageLog, 'id' | 'createdAt'>): Promise<string> {
   const id = `km_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  const totalKm = Math.max(0, (Number(log.endKm) || 0) - (Number(log.startKm) || 0));
+  const morningKm = Number(log.startKm) || 0;
+  const isLegacy = log.readingType === 'legacy' && Number(log.endKm) > morningKm;
+
+  let previousKm: number | null = log.previousKm !== undefined ? log.previousKm : null;
+  let previousDate: string | null = log.previousDate !== undefined ? log.previousDate : null;
+
+  if (!isLegacy && log.previousKm === undefined && log.vehiclePlate) {
+    const prev = await getLastMileageLogForVehicle(log.vehiclePlate, log.date, morningKm);
+    if (prev) {
+      previousKm = Math.max(Number(prev.startKm) || 0, Number(prev.endKm) || 0);
+      previousDate = prev.date;
+    }
+  }
+
+  const endKm = isLegacy ? Number(log.endKm) || morningKm : morningKm;
+  const totalKm = isLegacy
+    ? Math.max(0, endKm - morningKm)
+    : previousKm !== null && previousKm !== undefined && morningKm >= previousKm
+    ? morningKm - previousKm
+    : 0;
+
   const newLog: MileageLog = {
     ...log,
     id,
+    startKm: morningKm,
+    endKm,
+    previousKm,
+    previousDate,
     totalKm,
+    readingType: isLegacy ? 'legacy' : 'morning',
     createdAt: new Date().toISOString(),
   };
 
@@ -474,9 +607,9 @@ export async function addMileageLog(log: Omit<MileageLog, 'id' | 'createdAt'>): 
         const vSnap = await getDoc(vRef);
         if (vSnap.exists()) {
           const vData = vSnap.data() as Vehicle;
-          const endNum = Number(log.endKm) || 0;
-          if (endNum > (Number(vData.currentOdometer) || 0)) {
-            await updateDoc(vRef, { currentOdometer: endNum, updatedAt: new Date().toISOString() });
+          const latestOdo = Math.max(morningKm, endKm);
+          if (latestOdo > (Number(vData.currentOdometer) || 0)) {
+            await updateDoc(vRef, { currentOdometer: latestOdo, updatedAt: new Date().toISOString() });
           }
         }
       } catch (err) {
@@ -493,13 +626,38 @@ export async function addMileageLog(log: Omit<MileageLog, 'id' | 'createdAt'>): 
 
 export async function updateMileageLog(id: string, updates: Partial<MileageLog>): Promise<void> {
   try {
-    let finalUpdates = { ...updates, updatedAt: new Date().toISOString() };
-    if (updates.startKm !== undefined || updates.endKm !== undefined) {
+    const finalUpdates: Partial<MileageLog> = { ...updates, updatedAt: new Date().toISOString() };
+    const isLegacy = updates.readingType === 'legacy' && Number(updates.endKm) > Number(updates.startKm);
+
+    if (updates.startKm !== undefined || updates.endKm !== undefined || updates.previousKm !== undefined) {
       const s = Number(updates.startKm) || 0;
-      const e = Number(updates.endKm) || 0;
-      finalUpdates.totalKm = Math.max(0, e - s);
+      if (isLegacy) {
+        const e = Number(updates.endKm) || 0;
+        finalUpdates.totalKm = Math.max(0, e - s);
+      } else {
+        finalUpdates.endKm = s;
+        finalUpdates.readingType = 'morning';
+        const prev = updates.previousKm;
+        finalUpdates.totalKm = prev !== null && prev !== undefined && s >= Number(prev) ? s - Number(prev) : 0;
+      }
     }
     await updateDoc(doc(db, MILEAGE_COLLECTION, id), sanitizeData(finalUpdates));
+
+    if (updates.vehicleId && updates.startKm !== undefined) {
+      try {
+        const vRef = doc(db, VEHICLES_COLLECTION, updates.vehicleId);
+        const vSnap = await getDoc(vRef);
+        if (vSnap.exists()) {
+          const vData = vSnap.data() as Vehicle;
+          const latestOdo = Math.max(Number(updates.startKm) || 0, Number(updates.endKm) || 0);
+          if (latestOdo > (Number(vData.currentOdometer) || 0)) {
+            await updateDoc(vRef, { currentOdometer: latestOdo, updatedAt: new Date().toISOString() });
+          }
+        }
+      } catch (err) {
+        console.warn('Error updating vehicle odometer on mileage update:', err);
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, `${MILEAGE_COLLECTION}/${id}`);
     throw error;
@@ -578,13 +736,10 @@ export async function seedInitialDataIfEmpty(): Promise<boolean> {
       await setDoc(doc(db, DRIVERS_COLLECTION, drv.id), drv);
     }
 
-    // Seed recent delivery days
-    const today = new Date();
+    // Seed recent delivery days using local timezone
     const dates: string[] = [];
     for (let i = 0; i < 7; i++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      dates.push(d.toISOString().split('T')[0]);
+      dates.push(getDaysAgoDateString(i));
     }
 
     const initialRoutes: Omit<RouteRecord, 'id' | 'createdAt'>[] = [
@@ -774,10 +929,10 @@ export async function seedInitialFleetDataIfEmpty(): Promise<boolean> {
     await setDoc(initRef, { seeded: true, initializedAt: new Date().toISOString() });
     if (typeof window !== 'undefined') localStorage.setItem('gls_fleet_seeded', 'true');
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    const y1 = new Date(); y1.setDate(y1.getDate() - 1); const y1Str = y1.toISOString().split('T')[0];
-    const y2 = new Date(); y2.setDate(y2.getDate() - 2); const y2Str = y2.toISOString().split('T')[0];
-    const y3 = new Date(); y3.setDate(y3.getDate() - 3); const y3Str = y3.toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
+    const y1Str = getDaysAgoDateString(1);
+    const y2Str = getDaysAgoDateString(2);
+    const y3Str = getDaysAgoDateString(3);
 
     const sampleFuel: Omit<FuelLog, 'id' | 'createdAt'>[] = [
       {
@@ -914,12 +1069,13 @@ export async function seedInitialFleetDataIfEmpty(): Promise<boolean> {
     }
 
     const sampleMileage: Omit<MileageLog, 'id' | 'createdAt'>[] = [
-      { date: todayStr, provider: 'Oscar', vehicleId: 'veh_osc_1', driverName: 'Carlos Silva', vehiclePlate: 'ABC-1234', vehicleModel: 'Renault Master L3H2', routeNumber: 'RT-101', startKm: 112320, endKm: 112500, totalKm: 180, notes: 'Rota comercial cumprida' },
-      { date: todayStr, provider: 'Oscar', vehicleId: 'veh_osc_2', driverName: 'Roberto Mendes', vehiclePlate: 'DEF-5678', vehicleModel: 'Fiat Fiorino 1.4 EVO', routeNumber: 'RT-102', startKm: 78260, endKm: 78400, totalKm: 140, notes: 'Entregas na Zona Sul' },
-      { date: todayStr, provider: 'Tiago', vehicleId: 'veh_tia_1', driverName: 'Anderson Souza', vehiclePlate: 'PQR-1122', vehicleModel: 'Mercedes-Benz Sprinter 516', routeNumber: 'RT-201', startKm: 144980, endKm: 145200, totalKm: 220, notes: 'Metropolitana Leste' },
-      { date: todayStr, provider: 'Tiago', vehicleId: 'veh_tia_2', driverName: 'Diego Pereira', vehiclePlate: 'STU-3344', vehicleModel: 'Renault Master L3H2', routeNumber: 'RT-202', startKm: 89435, endKm: 89600, totalKm: 165, notes: 'Zona Oeste e Pinheiros' },
-      { date: y1Str, provider: 'Oscar', vehicleId: 'veh_osc_3', driverName: 'Lucas Rocha', vehiclePlate: 'GHI-9012', vehicleModel: 'Mercedes-Benz Sprinter 415', routeNumber: 'RT-103', startKm: 129890, endKm: 130100, totalKm: 210 },
-      { date: y1Str, provider: 'Tiago', vehicleId: 'veh_tia_3', driverName: 'Rafael Costa', vehiclePlate: 'VWX-5566', vehicleModel: 'Fiat Fiorino Endurance', routeNumber: 'RT-203', startKm: 52120, endKm: 52300, totalKm: 180 },
+      { date: todayStr, provider: 'Oscar', vehicleId: 'veh_osc_1', driverName: 'Carlos Silva', vehiclePlate: 'ABC-1234', vehicleModel: 'Renault Master L3H2', routeNumber: 'RT-101', startKm: 112500, endKm: 112500, previousKm: 112320, previousDate: y1Str, totalKm: 180, readingType: 'morning', notes: 'Leitura matinal diária' },
+      { date: y1Str, provider: 'Oscar', vehicleId: 'veh_osc_1', driverName: 'Carlos Silva', vehiclePlate: 'ABC-1234', vehicleModel: 'Renault Master L3H2', routeNumber: 'RT-101', startKm: 112320, endKm: 112320, previousKm: 112125, previousDate: y2Str, totalKm: 195, readingType: 'morning', notes: 'Leitura matinal diária' },
+      { date: todayStr, provider: 'Oscar', vehicleId: 'veh_osc_2', driverName: 'Roberto Mendes', vehiclePlate: 'DEF-5678', vehicleModel: 'Fiat Fiorino 1.4 EVO', routeNumber: 'RT-102', startKm: 78400, endKm: 78400, previousKm: 78260, previousDate: y1Str, totalKm: 140, readingType: 'morning', notes: 'Entregas na Zona Sul' },
+      { date: todayStr, provider: 'Tiago', vehicleId: 'veh_tia_1', driverName: 'Anderson Souza', vehiclePlate: 'PQR-1122', vehicleModel: 'Mercedes-Benz Sprinter 516', routeNumber: 'RT-201', startKm: 145200, endKm: 145200, previousKm: 144980, previousDate: y1Str, totalKm: 220, readingType: 'morning', notes: 'Metropolitana Leste' },
+      { date: todayStr, provider: 'Tiago', vehicleId: 'veh_tia_2', driverName: 'Diego Pereira', vehiclePlate: 'STU-3344', vehicleModel: 'Renault Master L3H2', routeNumber: 'RT-202', startKm: 89600, endKm: 89600, previousKm: 89435, previousDate: y1Str, totalKm: 165, readingType: 'morning', notes: 'Zona Oeste e Pinheiros' },
+      { date: y1Str, provider: 'Oscar', vehicleId: 'veh_osc_3', driverName: 'Lucas Rocha', vehiclePlate: 'GHI-9012', vehicleModel: 'Mercedes-Benz Sprinter 415', routeNumber: 'RT-103', startKm: 130100, endKm: 130100, previousKm: 129890, previousDate: y2Str, totalKm: 210, readingType: 'morning' },
+      { date: y1Str, provider: 'Tiago', vehicleId: 'veh_tia_3', driverName: 'Rafael Costa', vehiclePlate: 'VWX-5566', vehicleModel: 'Fiat Fiorino Endurance', routeNumber: 'RT-203', startKm: 52300, endKm: 52300, previousKm: 52120, previousDate: y2Str, totalKm: 180, readingType: 'morning' },
     ];
 
     for (let i = 0; i < sampleMileage.length; i++) {

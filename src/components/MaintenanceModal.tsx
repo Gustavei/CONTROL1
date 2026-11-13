@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Wrench, Calendar, Gauge, DollarSign, Save, AlertCircle } from 'lucide-react';
-import { MaintenanceLog, Driver, ProviderName, MaintenanceType, MaintenanceStatus } from '../types.ts';
+import { X, Wrench, Calendar, Gauge, Save, AlertCircle } from 'lucide-react';
+import { MaintenanceLog, Driver, Vehicle, ProviderName, MaintenanceType, MaintenanceStatus } from '../types.ts';
+import { getLocalDateString } from '../utils/date.ts';
 
 interface MaintenanceModalProps {
   isOpen: boolean;
@@ -8,7 +9,9 @@ interface MaintenanceModalProps {
   onSave: (log: Omit<MaintenanceLog, 'id' | 'createdAt'>, existingId?: string) => Promise<void>;
   editingLog?: MaintenanceLog | null;
   drivers: Driver[];
+  vehicles?: Vehicle[];
   defaultProvider?: ProviderName;
+  preselectedVehicleId?: string;
 }
 
 const CATEGORIES = [
@@ -30,10 +33,13 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
   onSave,
   editingLog,
   drivers,
+  vehicles = [],
   defaultProvider = 'Oscar',
+  preselectedVehicleId,
 }) => {
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(getLocalDateString());
   const [provider, setProvider] = useState<ProviderName>(defaultProvider);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [driverName, setDriverName] = useState<string>('');
   const [vehiclePlate, setVehiclePlate] = useState<string>('');
   const [vehicleModel, setVehicleModel] = useState<string>('');
@@ -53,11 +59,23 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
 
   const providerDrivers = drivers.filter((d) => d.provider === provider && d.status === 'active');
+  const providerVehicles = vehicles.filter((v) => v.provider === provider && v.status !== 'inactive');
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, saving, onClose]);
+
+  useEffect(() => {
+    setErrorMsg('');
     if (editingLog) {
       setDate(editingLog.date);
       setProvider(editingLog.provider);
+      setSelectedVehicleId(editingLog.vehicleId || '');
       setDriverName(editingLog.driverName || '');
       setVehiclePlate(editingLog.vehiclePlate);
       setVehicleModel(editingLog.vehicleModel || '');
@@ -73,35 +91,71 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
       setStatus(editingLog.status);
       setNotes(editingLog.notes || '');
     } else {
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getLocalDateString());
       setProvider(defaultProvider);
-      if (providerDrivers.length > 0) {
+
+      const targetVeh = preselectedVehicleId
+        ? vehicles.find((v) => v.id === preselectedVehicleId)
+        : providerVehicles[0] || vehicles[0];
+
+      if (targetVeh) {
+        setSelectedVehicleId(targetVeh.id);
+        setProvider(targetVeh.provider);
+        setVehiclePlate(targetVeh.plate);
+        setVehicleModel(targetVeh.model);
+        setDriverName(targetVeh.defaultDriverName || providerDrivers[0]?.name || '');
+        const odo = Number(targetVeh.currentOdometer) || 100000;
+        setOdometerKm(odo);
+        setNextMaintenanceKm(odo + 10000);
+      } else if (providerDrivers.length > 0) {
+        setSelectedVehicleId('');
         setDriverName(providerDrivers[0].name);
         setVehiclePlate(providerDrivers[0].licensePlate || '');
         setVehicleModel(providerDrivers[0].vehicleType || '');
+        setOdometerKm(115000);
+        setNextMaintenanceKm(125000);
       } else {
+        setSelectedVehicleId('');
         setDriverName('');
         setVehiclePlate('');
         setVehicleModel('');
+        setOdometerKm(115000);
+        setNextMaintenanceKm(125000);
       }
-      setOdometerKm(115000);
       setType('Preventiva');
       setCategory('Óleo e Filtros');
       setDescription('Troca de óleo de motor e filtros (óleo, combustível e ar)');
-      setCost(550.00);
+      setCost(550.0);
       setWorkshop('Oficina Mecânica Especializada');
       setInvoiceNumber('');
-      setNextMaintenanceKm(125000);
       setNextMaintenanceDate('');
       setStatus('Concluída');
       setNotes('');
     }
-  }, [editingLog, isOpen, defaultProvider]);
+  }, [editingLog, isOpen, defaultProvider, preselectedVehicleId]);
+
+  const handleVehicleSelect = (vehId: string) => {
+    setSelectedVehicleId(vehId);
+    const v = vehicles.find((item) => item.id === vehId);
+    if (v) {
+      setProvider(v.provider);
+      setVehiclePlate(v.plate);
+      setVehicleModel(v.model);
+      if (v.defaultDriverName) {
+        setDriverName(v.defaultDriverName);
+      }
+      const odo = Number(v.currentOdometer) || 100000;
+      setOdometerKm(odo);
+      if (!editingLog) {
+        setNextMaintenanceKm(odo + 10000);
+      }
+    }
+  };
 
   const handleDriverSelect = (selectedName: string) => {
     setDriverName(selectedName);
     const d = providerDrivers.find((drv) => drv.name === selectedName);
-    if (d) {
+    if (d && !selectedVehicleId) {
       if (d.licensePlate) setVehiclePlate(d.licensePlate);
       if (d.vehicleType) setVehicleModel(d.vehicleType);
     }
@@ -114,7 +168,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
     setErrorMsg('');
 
     if (!vehiclePlate.trim()) {
-      setErrorMsg('Informe a placa do veículo.');
+      setErrorMsg('Informe ou selecione a furgoneta.');
       return;
     }
     if (!description.trim()) {
@@ -134,6 +188,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
         {
           date,
           provider,
+          vehicleId: selectedVehicleId || undefined,
           driverName: driverName.trim(),
           vehiclePlate: vehiclePlate.trim().toUpperCase(),
           vehicleModel: vehicleModel.trim(),
@@ -160,7 +215,12 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">
@@ -188,6 +248,27 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
             <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {/* Selecionar Furgoneta Cadastrada */}
+          {vehicles.length > 0 && (
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-700 block mb-1">
+                Furgoneta / Veículo da Frota:
+              </label>
+              <select
+                value={selectedVehicleId}
+                onChange={(e) => handleVehicleSelect(e.target.value)}
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-slate-50 font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#0057B8]"
+              >
+                <option value="">Selecione a furgoneta cadastrada (opcional)...</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} &bull; {v.plate} ({v.model}) - Odômetro: {v.currentOdometer.toLocaleString('pt-BR')} KM
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -221,7 +302,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
                     onClick={() => {
                       setProvider(prov);
                       const pDrivers = drivers.filter((d) => d.provider === prov);
-                      if (pDrivers.length > 0) {
+                      if (pDrivers.length > 0 && !selectedVehicleId) {
                         setDriverName(pDrivers[0].name);
                         setVehiclePlate(pDrivers[0].licensePlate || '');
                         setVehicleModel(pDrivers[0].vehicleType || '');
@@ -359,7 +440,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
                   required
                   value={odometerKm}
                   onChange={(e) => setOdometerKm(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-md font-bold focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-md font-bold tabular-nums focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
                 />
               </div>
             </div>
@@ -377,7 +458,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
                   required
                   value={cost}
                   onChange={(e) => setCost(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-md font-black text-slate-800 focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
+                  className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-md font-black text-slate-800 tabular-nums focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
                 />
               </div>
             </div>
@@ -442,7 +523,7 @@ export const MaintenanceModal: React.FC<MaintenanceModalProps> = ({
                   placeholder="Ex: 125000"
                   value={nextMaintenanceKm}
                   onChange={(e) => setNextMaintenanceKm(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
+                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md bg-white tabular-nums focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
                 />
               </div>
 

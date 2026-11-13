@@ -3,12 +3,9 @@ import {
   Trophy,
   Award,
   AlertTriangle,
-  TrendingUp,
   Calendar,
   Truck,
   Users,
-  CheckCircle,
-  XCircle,
   Medal,
 } from 'lucide-react';
 import {
@@ -44,8 +41,13 @@ export const RankingsView: React.FC<RankingsViewProps> = ({ routes }) => {
   const oscarMetrics = React.useMemo(() => computeAggregateMetrics(oscarRoutes), [oscarRoutes]);
   const tiagoMetrics = React.useMemo(() => computeAggregateMetrics(tiagoRoutes), [tiagoRoutes]);
 
-  const bestProvider = oscarMetrics.qualityPercentage >= tiagoMetrics.qualityPercentage ? 'Oscar' : 'Tiago';
-  const worstProvider = oscarMetrics.qualityPercentage < tiagoMetrics.qualityPercentage ? 'Oscar' : 'Tiago';
+  const oscarHasRoutes = oscarRoutes.length > 0;
+  const tiagoHasRoutes = tiagoRoutes.length > 0;
+  const oscarEffective = oscarHasRoutes ? oscarMetrics.qualityPercentage : -1;
+  const tiagoEffective = tiagoHasRoutes ? tiagoMetrics.qualityPercentage : -1;
+
+  const bestProvider = oscarEffective >= tiagoEffective ? 'Oscar' : 'Tiago';
+  const worstProvider = bestProvider === 'Oscar' ? 'Tiago' : 'Oscar';
   const bestProviderMetrics = bestProvider === 'Oscar' ? oscarMetrics : tiagoMetrics;
   const worstProviderMetrics = worstProvider === 'Oscar' ? oscarMetrics : tiagoMetrics;
 
@@ -106,7 +108,7 @@ export const RankingsView: React.FC<RankingsViewProps> = ({ routes }) => {
             <div className="text-sm font-bold text-slate-900">Oscar vs Tiago</div>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-3 tabular-nums">
             <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-100">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-emerald-800 flex items-center gap-1">
@@ -114,11 +116,15 @@ export const RankingsView: React.FC<RankingsViewProps> = ({ routes }) => {
                   Melhor: {bestProvider}
                 </span>
                 <span className="font-extrabold text-emerald-700 text-sm">
-                  {bestProviderMetrics.qualityPercentage.toFixed(2)}%
+                  {bestProviderMetrics.totalRoutes > 0
+                    ? `${bestProviderMetrics.qualityPercentage.toFixed(2)}%`
+                    : '--'}
                 </span>
               </div>
               <div className="text-[10px] text-emerald-600 mt-1">
-                {bestProviderMetrics.totalPackages} pct entregues | {bestProviderMetrics.totalIncidences} inc.
+                {bestProviderMetrics.totalRoutes > 0
+                  ? `${Math.max(0, bestProviderMetrics.totalPackages - bestProviderMetrics.totalIncidences)} entregues | ${bestProviderMetrics.totalIncidences} inc.`
+                  : 'Sem rotas registradas'}
               </div>
             </div>
 
@@ -129,11 +135,15 @@ export const RankingsView: React.FC<RankingsViewProps> = ({ routes }) => {
                   2º Lugar: {worstProvider}
                 </span>
                 <span className="font-extrabold text-slate-800 text-sm">
-                  {worstProviderMetrics.qualityPercentage.toFixed(2)}%
+                  {worstProviderMetrics.totalRoutes > 0
+                    ? `${worstProviderMetrics.qualityPercentage.toFixed(2)}%`
+                    : '--'}
                 </span>
               </div>
               <div className="text-[10px] text-slate-500 mt-1">
-                {worstProviderMetrics.totalPackages} pct entregues | {worstProviderMetrics.totalIncidences} inc.
+                {worstProviderMetrics.totalRoutes > 0
+                  ? `${Math.max(0, worstProviderMetrics.totalPackages - worstProviderMetrics.totalIncidences)} entregues | ${worstProviderMetrics.totalIncidences} inc.`
+                  : 'Sem rotas registradas'}
               </div>
             </div>
           </div>
@@ -379,86 +389,97 @@ export const RankingsView: React.FC<RankingsViewProps> = ({ routes }) => {
 
         {/* Content Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700">
-            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
-              <tr>
-                <th className="px-4 py-3 text-center w-12">Posição</th>
-                <th className="px-4 py-3">Identificação</th>
-                <th className="px-4 py-3">Provedor / Detalhe</th>
-                <th className="px-4 py-3 text-right">Rotas</th>
-                <th className="px-4 py-3 text-right">Pacotes</th>
-                <th className="px-4 py-3 text-right">Incidências</th>
-                <th className="px-4 py-3 text-right">Qualidade</th>
-                <th className="px-4 py-3 text-center">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(rankingTab === 'drivers'
-                ? driverRankings
-                : rankingTab === 'routes'
-                ? routeRankings
-                : dayRankings
-              ).map((item, idx) => {
-                const isTop3 = idx < 3;
-                return (
-                  <tr key={item.id} className="hover:bg-slate-50/80 transition">
-                    <td className="px-4 py-3 text-center font-bold">
-                      {isTop3 ? (
+          {(rankingTab === 'drivers'
+            ? driverRankings
+            : rankingTab === 'routes'
+            ? routeRankings
+            : dayRankings
+          ).length === 0 ? (
+            <div className="p-10 text-center text-slate-500 text-xs">
+              Nenhuma rota registrada para calcular o ranking selecionado.
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                <tr>
+                  <th className="px-4 py-3 text-center w-12">Posição</th>
+                  <th className="px-4 py-3">Identificação</th>
+                  <th className="px-4 py-3">Provedor / Detalhe</th>
+                  <th className="px-4 py-3 text-right">Rotas</th>
+                  <th className="px-4 py-3 text-right">Saiu</th>
+                  <th className="px-4 py-3 text-right">Incidências</th>
+                  <th className="px-4 py-3 text-right">Qualidade</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 tabular-nums">
+                {(rankingTab === 'drivers'
+                  ? driverRankings
+                  : rankingTab === 'routes'
+                  ? routeRankings
+                  : dayRankings
+                ).map((item, idx) => {
+                  const isTop3 = idx < 3;
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50/80 transition">
+                      <td className="px-4 py-3 text-center font-bold">
+                        {isTop3 ? (
+                          <span
+                            className={`w-6 h-6 mx-auto rounded-full flex items-center justify-center text-xs font-black ${
+                              idx === 0
+                                ? 'bg-[#FFD100] text-[#002B5C]'
+                                : idx === 1
+                                ? 'bg-slate-200 text-slate-800'
+                                : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            {idx + 1}º
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">{idx + 1}º</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-bold text-slate-900">{item.label}</td>
+                      <td className="px-4 py-3 text-slate-500">{item.subLabel || '-'}</td>
+                      <td className="px-4 py-3 text-right font-medium">{item.totalRoutes}</td>
+                      <td className="px-4 py-3 text-right font-semibold">
+                        {item.totalPackages.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="px-4 py-3 text-right font-bold text-red-600">
+                        {item.totalIncidences}
+                      </td>
+                      <td className="px-4 py-3 text-right font-extrabold text-sm">
                         <span
-                          className={`w-6 h-6 mx-auto rounded-full flex items-center justify-center text-xs font-black ${
-                            idx === 0
-                              ? 'bg-[#FFD100] text-[#002B5C]'
-                              : idx === 1
-                              ? 'bg-slate-200 text-slate-800'
-                              : 'bg-amber-100 text-amber-900'
+                          className={
+                            item.classification === 'VERDE'
+                              ? 'text-emerald-600'
+                              : item.classification === 'AMARELO'
+                              ? 'text-amber-500'
+                              : 'text-red-600'
+                          }
+                        >
+                          {item.quality.toFixed(2)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            item.classification === 'VERDE'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.classification === 'AMARELO'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-red-100 text-red-800'
                           }`}
                         >
-                          {idx + 1}º
+                          {item.classification}
                         </span>
-                      ) : (
-                        <span className="text-slate-400">{idx + 1}º</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-900">{item.label}</td>
-                    <td className="px-4 py-3 text-slate-500">{item.subLabel || '-'}</td>
-                    <td className="px-4 py-3 text-right font-medium">{item.totalRoutes}</td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      {item.totalPackages.toLocaleString('pt-BR')}
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-red-600">
-                      {item.totalIncidences}
-                    </td>
-                    <td className="px-4 py-3 text-right font-extrabold text-sm">
-                      <span
-                        className={
-                          item.classification === 'VERDE'
-                            ? 'text-emerald-600'
-                            : item.classification === 'AMARELO'
-                            ? 'text-amber-500'
-                            : 'text-red-600'
-                        }
-                      >
-                        {item.quality.toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          item.classification === 'VERDE'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : item.classification === 'AMARELO'
-                            ? 'bg-amber-100 text-amber-800'
-                            : 'bg-red-100 text-red-800'
-                        }`}
-                      >
-                        {item.classification}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

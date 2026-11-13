@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Gauge, Calendar, Truck, ArrowRight, Save, AlertCircle, TrendingUp } from 'lucide-react';
+import { X, Gauge, Calendar, Save, AlertCircle, TrendingUp, Sun, ArrowRight } from 'lucide-react';
 import { MileageLog, Driver, Vehicle, RouteRecord, ProviderName } from '../types.ts';
+import { getLocalDateString } from '../utils/date.ts';
 
 interface MileageModalProps {
   isOpen: boolean;
@@ -22,20 +23,18 @@ export const MileageModal: React.FC<MileageModalProps> = ({
   editingLog,
   drivers,
   vehicles,
-  routes = [],
   defaultProvider = 'Oscar',
   preselectedVehicleId,
   allMileageLogs = [],
 }) => {
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(getLocalDateString());
   const [provider, setProvider] = useState<ProviderName>(defaultProvider);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [driverName, setDriverName] = useState<string>('');
   const [vehiclePlate, setVehiclePlate] = useState<string>('');
   const [vehicleModel, setVehicleModel] = useState<string>('');
   const [routeNumber, setRouteNumber] = useState<string>('');
-  const [startKm, setStartKm] = useState<number | string>(112000);
-  const [endKm, setEndKm] = useState<number | string>(112180);
+  const [morningKm, setMorningKm] = useState<number | string>('');
   const [notes, setNotes] = useState<string>('');
 
   const [saving, setSaving] = useState(false);
@@ -45,6 +44,16 @@ export const MileageModal: React.FC<MileageModalProps> = ({
   const providerVehicles = vehicles.filter((v) => v.provider === provider && v.status !== 'inactive');
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, saving, onClose]);
+
+  useEffect(() => {
+    setErrorMsg('');
     if (editingLog) {
       setDate(editingLog.date);
       setProvider(editingLog.provider);
@@ -53,11 +62,10 @@ export const MileageModal: React.FC<MileageModalProps> = ({
       setVehiclePlate(editingLog.vehiclePlate);
       setVehicleModel(editingLog.vehicleModel || '');
       setRouteNumber(editingLog.routeNumber || '');
-      setStartKm(editingLog.startKm);
-      setEndKm(editingLog.endKm);
+      setMorningKm(editingLog.startKm);
       setNotes(editingLog.notes || '');
     } else {
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getLocalDateString());
       setProvider(defaultProvider);
 
       const targetVeh = preselectedVehicleId
@@ -70,18 +78,14 @@ export const MileageModal: React.FC<MileageModalProps> = ({
         setVehiclePlate(targetVeh.plate);
         setVehicleModel(targetVeh.model);
         setDriverName(targetVeh.defaultDriverName || (providerDrivers[0]?.name ?? ''));
-        const curKm = Number(targetVeh.currentOdometer) || 112000;
-        setStartKm(curKm);
-        setEndKm(curKm + 180);
       } else {
         setSelectedVehicleId('');
         setVehiclePlate('');
         setVehicleModel('');
         setDriverName(providerDrivers[0]?.name || '');
-        setStartKm(112000);
-        setEndKm(112180);
       }
 
+      setMorningKm('');
       setRouteNumber('');
       setNotes('');
     }
@@ -89,6 +93,7 @@ export const MileageModal: React.FC<MileageModalProps> = ({
 
   const handleVehicleSelect = (vehId: string) => {
     setSelectedVehicleId(vehId);
+    setErrorMsg('');
     const v = vehicles.find((item) => item.id === vehId);
     if (v) {
       setProvider(v.provider);
@@ -97,30 +102,85 @@ export const MileageModal: React.FC<MileageModalProps> = ({
       if (v.defaultDriverName) {
         setDriverName(v.defaultDriverName);
       }
-      const curKm = Number(v.currentOdometer) || 112000;
-      setStartKm(curKm);
-      setEndKm(curKm + 180);
     }
   };
 
-  const numStart = Number(startKm) || 0;
-  const numEnd = Number(endKm) || 0;
-  const calculatedTotal = Math.max(0, numEnd - numStart);
-
-  // Calculate historical vehicle daily average
-  const vehicleStats = useMemo(() => {
-    if (!vehiclePlate) return null;
+  // Find the immediately preceding morning reading for this furgoneta (day-to-day comparison)
+  const previousMorningRecord = useMemo(() => {
+    if (!vehiclePlate.trim()) return null;
     const plateUpper = vehiclePlate.trim().toUpperCase();
-    const plateLogs = allMileageLogs.filter((m) => m.vehiclePlate.trim().toUpperCase() === plateUpper);
-    const totalRecordedKm = plateLogs.reduce((acc, curr) => acc + (Number(curr.totalKm) || 0), 0);
-    const daysCount = plateLogs.length;
-    const avgDailyKm = daysCount > 0 ? (totalRecordedKm / daysCount).toFixed(1) : null;
+
+    const candidates = allMileageLogs.filter((m) => {
+      if (editingLog && m.id === editingLog.id) return false;
+      return m.vehiclePlate && m.vehiclePlate.trim().toUpperCase() === plateUpper;
+    });
+
+    // Prefer records strictly prior to the selected date
+    const strictlyPrior = candidates.filter((m) => m.date < date);
+    const pool = strictlyPrior.length > 0 ? strictlyPrior : editingLog ? [] : candidates.filter((m) => m.date === date);
+
+    if (pool.length > 0) {
+      const sorted = [...pool].sort((a, b) => {
+        const dateCmp = b.date.localeCompare(a.date);
+        if (dateCmp !== 0) return dateCmp;
+        const odoA = Math.max(Number(a.startKm) || 0, Number(a.endKm) || 0);
+        const odoB = Math.max(Number(b.startKm) || 0, Number(b.endKm) || 0);
+        if (odoB !== odoA) return odoB - odoA;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+      const latest = sorted[0];
+      return {
+        km: Math.max(Number(latest.startKm) || 0, Number(latest.endKm) || 0),
+        date: latest.date,
+      };
+    }
+
+    if (editingLog && editingLog.previousKm !== undefined && editingLog.previousKm !== null) {
+      return {
+        km: Number(editingLog.previousKm),
+        date: editingLog.previousDate || null,
+      };
+    }
+
+    return null;
+  }, [vehiclePlate, date, allMileageLogs, editingLog]);
+
+  const selectedVehicle = useMemo(
+    () => vehicles.find((v) => v.id === selectedVehicleId || v.plate.trim().toUpperCase() === vehiclePlate.trim().toUpperCase()),
+    [vehicles, selectedVehicleId, vehiclePlate]
+  );
+
+  const hasTypedMorning = morningKm !== '' && morningKm !== null && morningKm !== undefined;
+  const numMorning = Number(morningKm) || 0;
+  const previousKm = previousMorningRecord ? previousMorningRecord.km : null;
+
+  const isValidComparison = previousKm !== null && hasTypedMorning && numMorning >= previousKm;
+  const calculatedTotal = isValidComparison ? numMorning - previousKm : 0;
+
+  // Historical & projected daily average (only counting intervals > 0 KM)
+  const vehicleStats = useMemo(() => {
+    if (!vehiclePlate.trim()) return null;
+    const plateUpper = vehiclePlate.trim().toUpperCase();
+    const plateLogs = allMileageLogs.filter(
+      (m) => m.vehiclePlate.trim().toUpperCase() === plateUpper && (!editingLog || m.id !== editingLog.id)
+    );
+    const intervalLogs = plateLogs.filter((m) => (Number(m.totalKm) || 0) > 0);
+    const totalRecordedKm = intervalLogs.reduce((acc, curr) => acc + (Number(curr.totalKm) || 0), 0);
+    const daysCount = intervalLogs.length;
+
+    const projectedTotal = totalRecordedKm + calculatedTotal;
+    const projectedDays = daysCount + (calculatedTotal > 0 ? 1 : 0);
+    const projectedAvg = projectedDays > 0 ? (projectedTotal / projectedDays).toFixed(1) : null;
+    const currentAvg = daysCount > 0 ? (totalRecordedKm / daysCount).toFixed(1) : null;
+
     return {
       daysCount,
       totalRecordedKm,
-      avgDailyKm,
+      currentAvg,
+      projectedAvg,
+      projectedDays,
     };
-  }, [vehiclePlate, allMileageLogs]);
+  }, [vehiclePlate, allMileageLogs, editingLog, calculatedTotal]);
 
   if (!isOpen) return null;
 
@@ -132,8 +192,14 @@ export const MileageModal: React.FC<MileageModalProps> = ({
       setErrorMsg('Informe ou selecione a furgoneta.');
       return;
     }
-    if (numEnd < numStart) {
-      setErrorMsg('O KM Final no final do dia não pode ser menor que o KM Inicial de saída.');
+    if (!hasTypedMorning || numMorning <= 0) {
+      setErrorMsg('Informe a quilometragem atual do odômetro pela manhã.');
+      return;
+    }
+    if (previousKm !== null && numMorning < previousKm) {
+      setErrorMsg(
+        `O KM da manhã (${numMorning.toLocaleString('pt-BR')} KM) não pode ser menor que a leitura da manhã anterior (${previousKm.toLocaleString('pt-BR')} KM).`
+      );
       return;
     }
 
@@ -148,36 +214,50 @@ export const MileageModal: React.FC<MileageModalProps> = ({
           vehiclePlate: vehiclePlate.trim().toUpperCase(),
           vehicleModel: vehicleModel.trim(),
           routeNumber: routeNumber.trim(),
-          startKm: numStart,
-          endKm: numEnd,
+          startKm: numMorning,
+          endKm: numMorning,
+          previousKm,
+          previousDate: previousMorningRecord?.date || null,
           totalKm: calculatedTotal,
+          readingType: 'morning',
           notes: notes.trim(),
         },
         editingLog?.id
       );
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Erro ao registrar quilometragem.');
+      setErrorMsg(err.message || 'Erro ao registrar quilometragem da manhã.');
     } finally {
       setSaving(false);
     }
   };
 
+  const suggestedPlaceholder = previousKm
+    ? `Ex: ${(previousKm + 165).toLocaleString('pt-BR').replace(/\./g, '')}`
+    : selectedVehicle?.currentOdometer
+    ? `Ex: ${selectedVehicle.currentOdometer}`
+    : 'Ex: 112500';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header GLS */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">
           <div className="flex items-center gap-3">
             <div className="bg-[#FFD100] text-[#002B5C] p-2 rounded-lg font-black">
-              <Gauge className="w-5 h-5" />
+              <Sun className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-extrabold text-base text-white">
-                {editingLog ? 'Editar Registro de KM da Furgoneta' : 'Marcar KM Diário da Furgoneta'}
+                {editingLog ? 'Editar KM da Manhã' : 'Marcar KM da Manhã'}
               </h3>
               <p className="text-xs text-blue-100">
-                KM Inicial (saída) e KM Final (retorno no fim do dia)
+                Cadastro matinal diário &bull; cálculo automático de um dia para o outro
               </p>
             </div>
           </div>
@@ -224,7 +304,7 @@ export const MileageModal: React.FC<MileageModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                Data da Operação:
+                Data (Manhã):
               </label>
               <div className="relative">
                 <Calendar className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -325,62 +405,93 @@ export const MileageModal: React.FC<MileageModalProps> = ({
             />
           </div>
 
-          {/* Odômetros Inicial (Saída), Final (Chegada) e Média */}
+          {/* Leitura Única da Manhã + Comparação Dia a Dia */}
           <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200 space-y-3">
-            <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider block flex items-center justify-between">
-              <span className="flex items-center gap-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
                 <Gauge className="w-4 h-4 text-emerald-700" />
-                Quilometragem Diária da Furgoneta
+                Leitura do Odômetro pela Manhã
               </span>
-            </span>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-[10px] font-bold text-slate-600 uppercase block mb-1">
-                  KM Inicial (Saída pela Manhã):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  required
-                  value={startKm}
-                  onChange={(e) => setStartKm(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md font-bold text-slate-900 bg-white focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">
-                  KM Final (Chegada no Fim do Dia):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  required
-                  value={endKm}
-                  onChange={(e) => setEndKm(e.target.value)}
-                  className="w-full px-3 py-1.5 text-xs border-2 border-emerald-600 rounded-md font-black text-slate-900 bg-white focus:outline-none"
-                />
-              </div>
+              {previousMorningRecord && (
+                <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
+                  Última: {previousMorningRecord.km.toLocaleString('pt-BR')} KM
+                </span>
+              )}
             </div>
 
-            {/* Total Distance & Average Display */}
-            <div className="p-3 bg-white rounded-lg border border-emerald-200 shadow-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">Distância Percorrida Hoje:</span>
-                <span className="text-lg font-black text-emerald-700">
-                  {calculatedTotal.toLocaleString('pt-BR')} KM
-                </span>
-              </div>
+            <div>
+              <label className="text-[10px] font-bold text-emerald-800 uppercase block mb-1">
+                KM Atual da Manhã (Painel da Furgoneta):
+              </label>
+              <input
+                type="number"
+                min="1"
+                required
+                placeholder={suggestedPlaceholder}
+                value={morningKm}
+                onChange={(e) => setMorningKm(e.target.value)}
+                className="w-full px-3 py-2 text-sm border-2 border-emerald-600 rounded-lg font-black text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+              />
+            </div>
 
-              {vehicleStats && vehicleStats.avgDailyKm && (
+            {/* Comparativo Automático de Um Dia Para o Outro */}
+            <div className="p-3 bg-white rounded-lg border border-emerald-200 shadow-xs space-y-2">
+              {previousMorningRecord ? (
+                <>
+                  <div className="flex items-center justify-between text-[11px] text-slate-600 pb-2 border-b border-slate-100">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                        Manhã Anterior {previousMorningRecord.date ? `(${previousMorningRecord.date.split('-').reverse().join('/')})` : ''}
+                      </span>
+                      <span className="font-bold text-slate-800">
+                        {previousMorningRecord.km.toLocaleString('pt-BR')} KM
+                      </span>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div className="text-right">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                        Manhã de Hoje ({date.split('-').reverse().join('/')})
+                      </span>
+                      <span className="font-black text-[#0057B8]">
+                        {hasTypedMorning && numMorning > 0 ? `${numMorning.toLocaleString('pt-BR')} KM` : '---'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700">KM Rodados (dia p/ dia):</span>
+                    <span
+                      className={`text-lg font-black ${
+                        hasTypedMorning && numMorning < previousMorningRecord.km
+                          ? 'text-red-600'
+                          : 'text-emerald-700'
+                      }`}
+                    >
+                      {hasTypedMorning && numMorning >= previousMorningRecord.km
+                        ? `+${calculatedTotal.toLocaleString('pt-BR')} KM`
+                        : hasTypedMorning && numMorning < previousMorningRecord.km
+                        ? 'Menor que anterior!'
+                        : '0 KM'}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="text-[11px] text-slate-600 leading-relaxed">
+                  <span className="font-bold text-[#0057B8] block mb-0.5">
+                    1º Registro Matinal (Marco Base)
+                  </span>
+                  Esta será a leitura inicial desta furgoneta. A partir do registro da manhã seguinte, a distância percorrida de um dia para o outro será calculada automaticamente.
+                </div>
+              )}
+
+              {vehicleStats && (vehicleStats.projectedAvg || vehicleStats.currentAvg) && (
                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
                   <span className="flex items-center gap-1">
                     <TrendingUp className="w-3.5 h-3.5 text-[#0057B8]" />
-                    Média Histórica Diária da Furgoneta:
+                    Média Diária (Dia p/ Dia):
                   </span>
                   <span className="font-bold text-[#0057B8]">
-                    {vehicleStats.avgDailyKm} KM / dia ({vehicleStats.daysCount} dias auditados)
+                    {vehicleStats.projectedAvg || vehicleStats.currentAvg} KM / dia ({vehicleStats.projectedDays || vehicleStats.daysCount} dias)
                   </span>
                 </div>
               )}
@@ -394,7 +505,7 @@ export const MileageModal: React.FC<MileageModalProps> = ({
             </label>
             <textarea
               rows={2}
-              placeholder="Ex: Rota cumprida sem alterações no itinerário..."
+              placeholder="Ex: Saída no horário normal, painel conferido pela manhã..."
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
@@ -416,7 +527,7 @@ export const MileageModal: React.FC<MileageModalProps> = ({
               className="flex items-center gap-2 px-5 py-2 text-xs sm:text-sm font-bold bg-[#0057B8] hover:bg-blue-700 text-white rounded-lg shadow-sm transition active:scale-95 disabled:opacity-50"
             >
               <Save className="w-4 h-4 text-[#FFD100]" />
-              {saving ? 'Gravando...' : editingLog ? 'Atualizar KM' : 'Salvar KM Diário'}
+              {saving ? 'Gravando...' : editingLog ? 'Atualizar KM da Manhã' : 'Salvar KM da Manhã'}
             </button>
           </div>
         </form>

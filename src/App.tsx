@@ -26,6 +26,8 @@ import { FuelModal } from './components/FuelModal.tsx';
 import { MaintenanceModal } from './components/MaintenanceModal.tsx';
 import { MileageModal } from './components/MileageModal.tsx';
 import { VehicleModal } from './components/VehicleModal.tsx';
+import { OfflineIndicator } from './components/OfflineIndicator.tsx';
+import { AIAssistantDrawer } from './components/AIAssistantDrawer.tsx';
 
 import { auth, db, ADMIN_EMAIL } from './lib/firebase.ts';
 import {
@@ -103,6 +105,7 @@ export default function App() {
   const [mileageModalOpen, setMileageModalOpen] = useState(false);
   const [editingMileage, setEditingMileage] = useState<MileageLog | null>(null);
   const [preselectedVehicleIdForMileage, setPreselectedVehicleIdForMileage] = useState<string | undefined>(undefined);
+  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
 
   // Toast notification
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -341,10 +344,10 @@ export default function App() {
   const tiagoRoutesCount = routes.filter((r) => r.provider === 'Tiago').length;
 
   return (
-    <div className="min-h-screen bg-[#F4F6F9] text-slate-800 flex flex-col font-['Inter',sans-serif]">
+    <div className="min-h-screen bg-[#F4F6F9] text-slate-800 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 bg-[#002B5C] text-white px-4 py-3 rounded-xl shadow-xl border border-blue-400/40 flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-bottom-5">
+        <div className="fixed bottom-20 right-5 z-50 bg-[#002B5C] text-white px-4 py-3 rounded-xl shadow-xl border border-blue-400/40 flex items-center gap-2.5 text-xs font-semibold animate-in slide-in-from-bottom-5">
           <div className="w-5 h-5 rounded-full bg-[#FFD100] text-[#002B5C] flex items-center justify-center font-bold">
             <Check className="w-3.5 h-3.5" />
           </div>
@@ -369,6 +372,7 @@ export default function App() {
           setReportModalCategory(activeTab === 'fleet' ? 'fleet' : 'routes');
           setReportModalOpen(true);
         }}
+        onOpenAIAssistant={() => setAiDrawerOpen(true)}
         onToggleAdminMode={(enable) => setIsAdmin(enable)}
       />
 
@@ -576,6 +580,7 @@ export default function App() {
         editingLog={editingFuel}
         drivers={drivers}
         vehicles={vehicles}
+        allFuelLogs={fuelLogs}
         defaultProvider={targetProviderForModal}
         preselectedVehicleId={preselectedVehicleIdForFuel}
       />
@@ -589,6 +594,7 @@ export default function App() {
         onSave={handleSaveMaintenanceLog}
         editingLog={editingMaintenance}
         drivers={drivers}
+        vehicles={vehicles}
         defaultProvider={targetProviderForModal}
       />
 
@@ -639,11 +645,48 @@ export default function App() {
           </div>
 
           <div className="text-blue-300 text-[11px] text-center sm:text-right">
-            <span>Fórmula Oficial: ((Pacotes - Incidências) / Pacotes) &times; 100</span>
+            <span>Fórmula Oficial: ((Saiu - Incidências) / Saiu) &times; 100</span>
             <div className="text-slate-400 mt-0.5">Sincronização em Nuvem em Tempo Real</div>
           </div>
         </div>
       </footer>
+      <OfflineIndicator />
+
+      {/* Floating AI Assistant Trigger */}
+      {!aiDrawerOpen && (
+        <button
+          type="button"
+          onClick={() => setAiDrawerOpen(true)}
+          className="fixed bottom-5 right-5 z-40 flex items-center gap-2 bg-[#002B5C] hover:bg-[#0057B8] text-white pl-3.5 pr-4 py-3 rounded-2xl shadow-xl border-2 border-[#FFD100] transition hover:scale-105 active:scale-95"
+          title="Abrir Assistente GLS IA (Cadastros e Dúvidas)"
+        >
+          <Sparkles className="w-4 h-4 text-[#FFD100] shrink-0" />
+          <span className="text-xs font-extrabold tracking-tight">Assistente IA</span>
+        </button>
+      )}
+
+      {/* AI Assistant Drawer */}
+      <AIAssistantDrawer
+        isOpen={aiDrawerOpen}
+        onClose={() => setAiDrawerOpen(false)}
+        liveState={{
+          routes,
+          drivers,
+          vehicles,
+          mileageLogs,
+          fuelLogs,
+          maintenanceLogs,
+          isAdmin,
+        }}
+        callbacks={{
+          onNavigateTab: (tab) => setActiveTab(tab),
+          onOpenReportModal: (category) => {
+            setReportModalCategory(category);
+            setReportModalOpen(true);
+          },
+          onNotify: showToast,
+        }}
+      />
     </div>
   );
 }

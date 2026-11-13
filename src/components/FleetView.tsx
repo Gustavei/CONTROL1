@@ -7,12 +7,8 @@ import {
   TrendingUp,
   PlusCircle,
   Truck,
-  Calendar,
   AlertTriangle,
-  CheckCircle,
-  Clock,
   Search,
-  Filter,
   FileSpreadsheet,
   FileText,
   Edit2,
@@ -20,9 +16,6 @@ import {
   BarChart3,
   CheckCircle2,
   AlertCircle,
-  Activity,
-  ArrowRight,
-  Zap,
 } from 'lucide-react';
 import {
   FuelLog,
@@ -33,6 +26,13 @@ import {
   ProviderName,
 } from '../types.ts';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal.tsx';
+import {
+  getLocalDateString,
+  formatDateBR,
+  daysFromToday,
+  getSavedEfficiencyThreshold,
+  saveEfficiencyThreshold,
+} from '../utils/date.ts';
 
 interface FleetViewProps {
   fuelLogs: FuelLog[];
@@ -81,8 +81,10 @@ export const FleetView: React.FC<FleetViewProps> = ({
   const [mileageToDelete, setMileageToDelete] = useState<MileageLog | null>(null);
   const [vehicleToDelete, setVehicleToDelete] = useState<Vehicle | null>(null);
 
-  // Efficiency threshold configuration (KM/L) & filter
-  const [minEfficiencyThreshold, setMinEfficiencyThreshold] = useState<number>(10.0);
+  // Efficiency threshold configuration (KM/L) & filter (persisted in localStorage)
+  const [minEfficiencyThreshold, setMinEfficiencyThreshold] = useState<number>(() =>
+    getSavedEfficiencyThreshold(10.0)
+  );
   const [filterOnlyInefficient, setFilterOnlyInefficient] = useState<boolean>(false);
 
   // Filtered datasets
@@ -142,7 +144,8 @@ export const FleetView: React.FC<FleetViewProps> = ({
     const vMaintLogs = maintenanceLogs.filter((m) => m.vehiclePlate.trim().toUpperCase() === pUpper);
 
     const vTotalKm = vKmLogs.reduce((acc, curr) => acc + (Number(curr.totalKm) || 0), 0);
-    const daysCount = vKmLogs.length;
+    const intervalLogs = vKmLogs.filter((m) => (Number(m.totalKm) || 0) > 0);
+    const daysCount = intervalLogs.length;
     const avgDailyKm = daysCount > 0 ? Number((vTotalKm / daysCount).toFixed(1)) : 0;
 
     // Consumption average (KM/L) from fuel entries with distanceSinceLastFuel or total distance / liters
@@ -205,7 +208,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
         badgeBg: 'bg-slate-100',
         badgeText: 'text-slate-500',
         badgeBorder: 'border-slate-200',
-        rowClass: 'border-l-4 border-l-slate-300 hover:bg-slate-50/70',
+        rowClass: 'hover:bg-slate-50/70',
         message: 'Aguardando mais abastecimentos para cálculo de consumo.',
       };
     }
@@ -219,7 +222,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
         badgeBg: 'bg-red-50',
         badgeText: 'text-red-700',
         badgeBorder: 'border-red-300',
-        rowClass: 'border-l-4 border-l-red-500 bg-red-50/30 hover:bg-red-50/70',
+        rowClass: 'bg-red-50/40 hover:bg-red-50/70',
         message: `ALERTA CRÍTICO: Consumo de ${eff} KM/L está abaixo do limite aceitável de ${minEfficiencyThreshold} KM/L!`,
       };
     }
@@ -233,7 +236,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
         badgeBg: 'bg-amber-50',
         badgeText: 'text-amber-800',
         badgeBorder: 'border-amber-300',
-        rowClass: 'border-l-4 border-l-amber-400 bg-amber-50/20 hover:bg-amber-50/50',
+        rowClass: 'bg-amber-50/30 hover:bg-amber-50/60',
         message: `Consumo regular (${eff} KM/L). Próximo da faixa limite aceitável (${minEfficiencyThreshold} KM/L).`,
       };
     }
@@ -246,7 +249,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
       badgeBg: 'bg-emerald-50',
       badgeText: 'text-emerald-700',
       badgeBorder: 'border-emerald-300',
-      rowClass: 'border-l-4 border-l-emerald-500 hover:bg-emerald-50/30',
+      rowClass: 'hover:bg-emerald-50/30',
       message: `Consumo eficiente (${eff} KM/L). Acima do limite aceitável de ${minEfficiencyThreshold} KM/L.`,
     };
   };
@@ -334,10 +337,13 @@ export const FleetView: React.FC<FleetViewProps> = ({
       lines.push(`${m.date};${m.provider};"${m.driverName || ''}";"${m.vehiclePlate}";${m.odometerKm};${m.type};"${m.category}";"${m.description.replace(/"/g, '""')}";${m.cost};"${m.workshop}";${m.status}`);
     });
     lines.push('');
-    lines.push('--- QUILOMETRAGEM DIÁRIA ---');
-    lines.push('Data;Provedor;Motorista;Placa;Rota;KM Inicial;KM Final;KM Total');
+    lines.push('--- QUILOMETRAGEM DIÁRIA (LEITURA DA MANHÃ) ---');
+    lines.push('Data;Provedor;Motorista;Placa;Rota;Manhã Anterior (KM);KM da Manhã (KM);KM Rodados (Dia p/ Dia)');
     filteredMileage.forEach((k) => {
-      lines.push(`${k.date};${k.provider};"${k.driverName}";"${k.vehiclePlate}";"${k.routeNumber || ''}";${k.startKm};${k.endKm};${k.totalKm}`);
+      const isLegacy = k.readingType === 'legacy' || (k.previousKm === undefined && k.endKm > k.startKm);
+      const prevVal = k.previousKm != null ? k.previousKm : isLegacy ? k.startKm : 'Base Inicial';
+      const curVal = isLegacy ? k.endKm : k.startKm;
+      lines.push(`${k.date};${k.provider};"${k.driverName}";"${k.vehiclePlate}";"${k.routeNumber || ''}";${prevVal};${curVal};${k.totalKm}`);
     });
 
     const csvContent = '\uFEFF' + lines.join('\r\n');
@@ -345,11 +351,60 @@ export const FleetView: React.FC<FleetViewProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GLS_Controle_Frota_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `GLS_Controle_Frota_${getLocalDateString()}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
+
+  // Proactive preventive maintenance alerts sorted by urgency
+  const preventiveAlerts = useMemo(() => {
+    return maintenanceLogs
+      .filter((m) => (m.nextMaintenanceKm || m.nextMaintenanceDate) && (providerFilter === 'all' || m.provider === providerFilter))
+      .map((m) => {
+        const linkedVehicle = vehicles.find(
+          (v) =>
+            (m.vehicleId && v.id === m.vehicleId) ||
+            v.plate.trim().toUpperCase() === m.vehiclePlate.trim().toUpperCase()
+        );
+        const currentKm = linkedVehicle ? linkedVehicle.currentOdometer : m.odometerKm;
+        const kmRemaining = m.nextMaintenanceKm != null ? m.nextMaintenanceKm - currentKm : null;
+        const daysRemaining = m.nextMaintenanceDate ? daysFromToday(m.nextMaintenanceDate) : null;
+
+        const isKmOverdue = kmRemaining !== null && kmRemaining <= 0;
+        const isDateOverdue = daysRemaining !== null && daysRemaining < 0;
+        const isKmSoon = kmRemaining !== null && kmRemaining > 0 && kmRemaining <= 1500;
+        const isDateSoon = daysRemaining !== null && daysRemaining >= 0 && daysRemaining <= 7;
+
+        let urgency: 'overdue' | 'soon' | 'ok' = 'ok';
+        let priority = 2;
+        if (isKmOverdue || isDateOverdue) {
+          urgency = 'overdue';
+          priority = 0;
+        } else if (isKmSoon || isDateSoon) {
+          urgency = 'soon';
+          priority = 1;
+        }
+
+        return {
+          log: m,
+          currentKm,
+          kmRemaining,
+          daysRemaining,
+          urgency,
+          priority,
+        };
+      })
+      .sort((a, b) => {
+        if (a.priority !== b.priority) return a.priority - b.priority;
+        const aKm = a.kmRemaining ?? Infinity;
+        const bKm = b.kmRemaining ?? Infinity;
+        if (aKm !== bKm) return aKm - bKm;
+        const aDays = a.daysRemaining ?? Infinity;
+        const bDays = b.daysRemaining ?? Infinity;
+        return aDays - bDays;
+      });
+  }, [maintenanceLogs, vehicles, providerFilter]);
 
   return (
     <div className="space-y-6">
@@ -361,7 +416,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
             Controle de Frota: Furgonetas, Quilometragem & Abastecimento
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Cadastre furgonetas, marque KM diário de saída/chegada e faça a média de consumo comparada ao último abastecimento
+            Cadastre furgonetas, marque o KM pela manhã todos os dias (média automática de um dia para o outro) e acompanhe o consumo
           </p>
         </div>
 
@@ -415,7 +470,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
               <button
                 onClick={() => onOpenMileageModal()}
                 className="flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-2.5 py-1.5 rounded-lg shadow-xs transition"
-                title="Marcar KM Diário"
+                title="Marcar KM da Manhã"
               >
                 <Gauge className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">+ Marcar KM</span>
@@ -442,7 +497,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
       </div>
 
       {/* KPI Cards: Frota Geral */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5 tabular-nums">
         {/* Furgonetas Ativas */}
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-slate-500">
@@ -590,7 +645,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
       {activeSubTab === 'overview' && (
         <div className="space-y-6">
           {/* Comparativo de Custos Oscar vs Tiago */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 tabular-nums">
             {/* Oscar Side */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -711,54 +766,129 @@ export const FleetView: React.FC<FleetViewProps> = ({
           </div>
 
           {/* Alertas de Manutenção Preventiva Próxima */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5">
-            <h3 className="font-bold text-slate-900 text-sm mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              Controle de Manutenção Preventiva & Alertas de Revisão
-            </h3>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 tabular-nums">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Controle de Manutenção Preventiva & Alertas de Revisão
+              </h3>
+              {preventiveAlerts.length > 0 && (
+                <div className="flex items-center gap-2 text-[10px] font-bold">
+                  {preventiveAlerts.filter((a) => a.urgency === 'overdue').length > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-red-100 text-red-700">
+                      {preventiveAlerts.filter((a) => a.urgency === 'overdue').length} Vencida(s)
+                    </span>
+                  )}
+                  {preventiveAlerts.filter((a) => a.urgency === 'soon').length > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">
+                      {preventiveAlerts.filter((a) => a.urgency === 'soon').length} Próxima(s)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
-            {maintenanceLogs.filter((m) => m.nextMaintenanceKm || m.nextMaintenanceDate).length === 0 ? (
+            {preventiveAlerts.length === 0 ? (
               <div className="text-xs text-slate-500 py-3 text-center">
                 Nenhum agendamento ou alerta de próxima manutenção registrado.
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {maintenanceLogs
-                  .filter((m) => m.nextMaintenanceKm || m.nextMaintenanceDate)
-                  .slice(0, 6)
-                  .map((m) => (
+                {preventiveAlerts.slice(0, 6).map(({ log: m, currentKm, kmRemaining, daysRemaining, urgency }) => {
+                  const cardStyle =
+                    urgency === 'overdue'
+                      ? 'border-red-300 bg-red-50/50'
+                      : urgency === 'soon'
+                      ? 'border-amber-300 bg-amber-50/40'
+                      : 'border-slate-200 bg-slate-50/70';
+
+                  const statusLabel =
+                    urgency === 'overdue'
+                      ? 'VENCIDA'
+                      : urgency === 'soon'
+                      ? 'PRÓXIMA'
+                      : 'EM DIA';
+
+                  const statusClass =
+                    urgency === 'overdue'
+                      ? 'bg-red-100 text-red-700 border border-red-200'
+                      : urgency === 'soon'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+
+                  return (
                     <div
                       key={m.id}
-                      className="p-3 rounded-lg border border-slate-200 bg-slate-50/70 text-xs flex flex-col justify-between"
+                      className={`p-3.5 rounded-lg border text-xs flex flex-col justify-between ${cardStyle}`}
                     >
                       <div>
-                        <div className="flex justify-between items-start">
-                          <span className="font-bold text-slate-900">{m.vehiclePlate}</span>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800">
-                            {m.provider}
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-slate-900">{m.vehiclePlate}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700">
+                              {m.provider}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${statusClass}`}>
+                            {statusLabel}
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-600 mt-1">{m.description}</div>
                       </div>
 
-                      <div className="mt-3 pt-2 border-t border-slate-200 text-[11px] space-y-0.5">
+                      <div className="mt-3 pt-2 border-t border-slate-200/80 text-[11px] space-y-1">
                         {m.nextMaintenanceKm && (
-                          <div className="flex justify-between text-slate-600">
-                            <span>Próxima Troca (KM):</span>
-                            <span className="font-bold text-[#0057B8]">{m.nextMaintenanceKm.toLocaleString('pt-BR')} KM</span>
+                          <div className="flex justify-between items-center text-slate-600">
+                            <span>Próxima Troca:</span>
+                            <span className="font-bold text-[#0057B8] text-right">
+                              {m.nextMaintenanceKm.toLocaleString('pt-BR')} KM
+                              {kmRemaining !== null && (
+                                <span
+                                  className={`block text-[10px] font-bold ${
+                                    kmRemaining <= 0
+                                      ? 'text-red-600'
+                                      : kmRemaining <= 1500
+                                      ? 'text-amber-700'
+                                      : 'text-slate-500'
+                                  }`}
+                                >
+                                  {kmRemaining <= 0
+                                    ? `Atrasada em ${Math.abs(kmRemaining).toLocaleString('pt-BR')} KM (atual ${currentKm.toLocaleString('pt-BR')})`
+                                    : `Faltam ${kmRemaining.toLocaleString('pt-BR')} KM`}
+                                </span>
+                              )}
+                            </span>
                           </div>
                         )}
                         {m.nextMaintenanceDate && (
-                          <div className="flex justify-between text-slate-600">
+                          <div className="flex justify-between items-center text-slate-600">
                             <span>Data Limite:</span>
-                            <span className="font-bold text-slate-800">
-                              {m.nextMaintenanceDate.split('-').reverse().join('/')}
+                            <span className="font-bold text-slate-800 text-right">
+                              {formatDateBR(m.nextMaintenanceDate)}
+                              {daysRemaining !== null && (
+                                <span
+                                  className={`block text-[10px] font-bold ${
+                                    daysRemaining < 0
+                                      ? 'text-red-600'
+                                      : daysRemaining <= 7
+                                      ? 'text-amber-700'
+                                      : 'text-slate-500'
+                                  }`}
+                                >
+                                  {daysRemaining < 0
+                                    ? `Venceu há ${Math.abs(daysRemaining)} dia(s)`
+                                    : daysRemaining === 0
+                                    ? 'Vence hoje'
+                                    : `Em ${daysRemaining} dia(s)`}
+                                </span>
+                              )}
                             </span>
                           </div>
                         )}
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -793,7 +923,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
               <Truck className="w-12 h-12 text-slate-300 mx-auto" />
               <h4 className="font-bold text-slate-700 text-sm">Nenhuma furgoneta cadastrada</h4>
               <p className="text-xs text-slate-500 max-w-md mx-auto">
-                Cadastre suas furgonetas para controlar a quilometragem diária com KM Inicial/Final e calcular médias automáticas de abastecimento.
+                Cadastre suas furgonetas para registrar a quilometragem pela manhã (de um dia para o outro) e calcular médias automáticas de abastecimento.
               </p>
               {isAdmin && (
                 <button
@@ -867,7 +997,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
                     </div>
 
                     {/* Card Body: Indicators & Averages */}
-                    <div className="p-4 space-y-3 flex-1">
+                    <div className="p-4 space-y-3 flex-1 tabular-nums">
                       {/* Odômetro Atual */}
                       <div className="flex items-center justify-between p-2.5 rounded-lg bg-blue-50/60 border border-blue-100">
                         <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -889,7 +1019,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
                             {metrics.avgDailyKm > 0 ? `${metrics.avgDailyKm} KM/dia` : 'Sem registros'}
                           </span>
                           <span className="text-[10px] text-slate-400 block mt-0.5">
-                            {metrics.daysCount} dias auditados
+                            {metrics.daysCount} {metrics.daysCount === 1 ? 'dia medido' : 'dias medidos'}
                           </span>
                         </div>
 
@@ -943,7 +1073,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
                             <button
                               onClick={() => onOpenMileageModal(undefined, vehicle.id)}
                               className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md border border-emerald-200 transition"
-                              title="Marcar KM Inicial/Final de hoje"
+                              title="Marcar KM da Manhã"
                             >
                               <Gauge className="w-3.5 h-3.5" />
                               <span>Marcar KM</span>
@@ -998,7 +1128,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
                 Controle Diário de Quilometragem por Furgoneta ({filteredMileage.length})
               </h3>
               <p className="text-xs text-slate-500">
-                Auditoria de KM Inicial e Final com sistema de alertas visuais (color coding) para monitoramento de consumo
+                Registro matinal diário: marca-se o odômetro pela manhã e o sistema calcula a rodagem de um dia para o outro, média diária e alertas de consumo
               </p>
             </div>
 
@@ -1011,8 +1141,12 @@ export const FleetView: React.FC<FleetViewProps> = ({
                 </span>
                 <select
                   value={minEfficiencyThreshold}
-                  onChange={(e) => setMinEfficiencyThreshold(Number(e.target.value))}
-                  className="font-black text-[#0057B8] bg-transparent focus:outline-none cursor-pointer text-xs"
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setMinEfficiencyThreshold(val);
+                    saveEfficiencyThreshold(val);
+                  }}
+                  className="font-black text-[#0057B8] bg-transparent focus:outline-none cursor-pointer text-xs tabular-nums"
                   title="Definir limite mínimo aceitável de consumo (KM/L) para disparar alertas visuais"
                 >
                   <option value={8.0}>8.0 KM/L</option>
@@ -1029,11 +1163,11 @@ export const FleetView: React.FC<FleetViewProps> = ({
               {/* Botão de Filtro de Alertas de Eficiência */}
               <button
                 onClick={() => setFilterOnlyInefficient(!filterOnlyInefficient)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition tabular-nums ${
                   filterOnlyInefficient
                     ? 'bg-red-600 text-white shadow-xs'
                     : criticalMileageLogs.length > 0
-                    ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300 animate-pulse'
+                    ? 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
                 title="Filtrar furgonetas com consumo abaixo do limite aceitável"
@@ -1048,7 +1182,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
                   className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-xs flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
-                  Marcar KM Diário
+                  Marcar KM da Manhã
                 </button>
               )}
             </div>
@@ -1120,21 +1254,24 @@ export const FleetView: React.FC<FleetViewProps> = ({
                     <th className="px-4 py-3">Furgoneta / Placa</th>
                     <th className="px-4 py-3">Motorista</th>
                     <th className="px-4 py-3">Rota</th>
-                    <th className="px-4 py-3 text-right">KM Inicial</th>
-                    <th className="px-4 py-3 text-right">KM Final</th>
-                    <th className="px-4 py-3 text-right">KM Rodados</th>
+                    <th className="px-4 py-3 text-right">Manhã Anterior</th>
+                    <th className="px-4 py-3 text-right">KM da Manhã</th>
+                    <th className="px-4 py-3 text-right">KM Rodados (Dia p/ Dia)</th>
                     <th className="px-4 py-3">Consumo / Eficiência</th>
                     <th className="px-4 py-3">Observações</th>
                     {isAdmin && <th className="px-4 py-3 text-center">Ações</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 tabular-nums">
                   {filteredMileage.map((km) => {
                     const alert = getEfficiencyAlertInfo(km.vehiclePlate);
+                    const metrics = getVehicleMetrics(km.vehiclePlate);
+                    const isLegacy = km.readingType === 'legacy' || (km.previousKm === undefined && km.endKm > km.startKm);
+                    const currentReading = isLegacy ? km.endKm : km.startKm;
                     return (
                       <tr key={km.id} className={`${alert.rowClass} transition`}>
                         <td className="px-4 py-2.5 whitespace-nowrap font-medium">
-                          {km.date.split('-').reverse().join('/')}
+                          {formatDateBR(km.date)}
                         </td>
                         <td className="px-4 py-2.5 whitespace-nowrap font-bold">
                           <span
@@ -1160,13 +1297,46 @@ export const FleetView: React.FC<FleetViewProps> = ({
                           {km.routeNumber || '-'}
                         </td>
                         <td className="px-4 py-2.5 text-right font-medium text-slate-600 whitespace-nowrap">
-                          {km.startKm.toLocaleString('pt-BR')} KM
+                          {km.previousKm != null ? (
+                            <div>
+                              <span>{km.previousKm.toLocaleString('pt-BR')} KM</span>
+                              {km.previousDate && (
+                                <span className="text-[10px] text-slate-400 block font-normal">
+                                  {formatDateBR(km.previousDate)}
+                                </span>
+                              )}
+                            </div>
+                          ) : isLegacy ? (
+                            <div>
+                              <span>{km.startKm.toLocaleString('pt-BR')} KM</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">Saída (legado)</span>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-50 text-[#0057B8]">
+                              1º Registro (Base)
+                            </span>
+                          )}
                         </td>
-                        <td className="px-4 py-2.5 text-right font-medium text-slate-600 whitespace-nowrap">
-                          {km.endKm.toLocaleString('pt-BR')} KM
+                        <td className="px-4 py-2.5 text-right font-bold text-slate-800 whitespace-nowrap">
+                          {currentReading.toLocaleString('pt-BR')} KM
                         </td>
-                        <td className="px-4 py-2.5 text-right font-black text-emerald-600 text-sm whitespace-nowrap">
-                          {km.totalKm.toLocaleString('pt-BR')} KM
+                        <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                          {km.totalKm > 0 ? (
+                            <div>
+                              <span className="font-black text-emerald-600 text-sm">
+                                +{km.totalKm.toLocaleString('pt-BR')} KM
+                              </span>
+                              {metrics.avgDailyKm > 0 && (
+                                <span className="text-[10px] text-slate-400 block font-medium">
+                                  Média: {metrics.avgDailyKm} KM/dia
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-xs font-semibold text-slate-400">
+                              Base (0 KM)
+                            </span>
+                          )}
                         </td>
                         {/* Nova Coluna: Consumo / Alerta de Eficiência */}
                         <td className="px-4 py-2.5 whitespace-nowrap">
@@ -1271,11 +1441,11 @@ export const FleetView: React.FC<FleetViewProps> = ({
                     {isAdmin && <th className="px-4 py-3 text-center">Ações</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 tabular-nums">
                   {filteredFuel.map((fuel) => (
                     <tr key={fuel.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-4 py-2.5 whitespace-nowrap font-medium">
-                        {fuel.date.split('-').reverse().join('/')}
+                        {formatDateBR(fuel.date)}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap font-bold">
                         <span
@@ -1418,11 +1588,11 @@ export const FleetView: React.FC<FleetViewProps> = ({
                     {isAdmin && <th className="px-4 py-3 text-center">Ações</th>}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 tabular-nums">
                   {filteredMaintenance.map((m) => (
                     <tr key={m.id} className="hover:bg-slate-50/80 transition">
                       <td className="px-4 py-2.5 whitespace-nowrap font-medium">
-                        {m.date.split('-').reverse().join('/')}
+                        {formatDateBR(m.date)}
                       </td>
                       <td className="px-4 py-2.5 whitespace-nowrap font-bold">
                         <span
@@ -1556,7 +1726,7 @@ export const FleetView: React.FC<FleetViewProps> = ({
         isOpen={mileageToDelete !== null}
         title="Excluir Registro de Odômetro"
         message="Tem certeza que deseja excluir este registro de quilometragem diária?"
-        itemName={mileageToDelete ? `${mileageToDelete.vehiclePlate} - ${mileageToDelete.totalKm} KM (${mileageToDelete.date.split('-').reverse().join('/')})` : undefined}
+        itemName={mileageToDelete ? `${mileageToDelete.vehiclePlate} - ${mileageToDelete.totalKm} KM (${formatDateBR(mileageToDelete.date)})` : undefined}
         onConfirm={async () => {
           if (mileageToDelete) {
             await onDeleteMileageLog(mileageToDelete.id);

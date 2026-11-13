@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Fuel, Calendar, Gauge, DollarSign, FileText, MapPin, Save, AlertCircle, ArrowRight, TrendingUp } from 'lucide-react';
 import { FuelLog, Driver, Vehicle, ProviderName, FuelType } from '../types.ts';
 import { getLastFuelLogForVehicle } from '../services/dataService.ts';
+import { getLocalDateString } from '../utils/date.ts';
 
 interface FuelModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface FuelModalProps {
   editingLog?: FuelLog | null;
   drivers: Driver[];
   vehicles: Vehicle[];
+  allFuelLogs?: FuelLog[];
   defaultProvider?: ProviderName;
   preselectedVehicleId?: string;
 }
@@ -21,10 +23,11 @@ export const FuelModal: React.FC<FuelModalProps> = ({
   editingLog,
   drivers,
   vehicles,
+  allFuelLogs = [],
   defaultProvider = 'Oscar',
   preselectedVehicleId,
 }) => {
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(getLocalDateString());
   const [provider, setProvider] = useState<ProviderName>(defaultProvider);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string>('');
   const [driverName, setDriverName] = useState<string>('');
@@ -47,20 +50,38 @@ export const FuelModal: React.FC<FuelModalProps> = ({
   const providerDrivers = drivers.filter((d) => d.provider === provider && d.status === 'active');
   const providerVehicles = vehicles.filter((v) => v.provider === provider && v.status !== 'inactive');
 
-  // Fetch previous fuel log when vehicle changes
-  const loadPreviousFuel = async (plate: string, currentKm?: number) => {
-    if (!plate) {
+  // Fetch previous fuel log when vehicle changes (instant via allFuelLogs when available)
+  const loadPreviousFuel = async (plate: string, currentKm?: number, excludeId?: string) => {
+    if (!plate.trim()) {
       setPreviousOdometerKm(null);
       return;
     }
+
+    const plateUpper = plate.trim().toUpperCase();
+    if (allFuelLogs.length > 0) {
+      const candidates = allFuelLogs.filter((f) => {
+        if (excludeId && f.id === excludeId) return false;
+        const matchPlate = f.vehiclePlate && f.vehiclePlate.trim().toUpperCase() === plateUpper;
+        const matchKm = currentKm !== undefined ? Number(f.odometerKm) < currentKm : true;
+        return matchPlate && matchKm;
+      });
+      if (candidates.length > 0) {
+        const sorted = [...candidates].sort((a, b) => (Number(b.odometerKm) || 0) - (Number(a.odometerKm) || 0));
+        setPreviousOdometerKm(Number(sorted[0].odometerKm));
+        return;
+      }
+      const v = vehicles.find((item) => item.plate.trim().toUpperCase() === plateUpper);
+      setPreviousOdometerKm(v && v.initialOdometer ? Number(v.initialOdometer) : null);
+      return;
+    }
+
     setLoadingLastFuel(true);
     try {
       const prev = await getLastFuelLogForVehicle(plate, currentKm);
-      if (prev && prev.odometerKm) {
+      if (prev && prev.odometerKm && (!excludeId || prev.id !== excludeId)) {
         setPreviousOdometerKm(Number(prev.odometerKm));
       } else {
-        // Fallback to vehicle initial odometer
-        const v = vehicles.find((item) => item.plate.toUpperCase() === plate.toUpperCase());
+        const v = vehicles.find((item) => item.plate.toUpperCase() === plateUpper);
         if (v && v.initialOdometer) {
           setPreviousOdometerKm(Number(v.initialOdometer));
         } else {
@@ -75,6 +96,16 @@ export const FuelModal: React.FC<FuelModalProps> = ({
   };
 
   useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !saving) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, saving, onClose]);
+
+  useEffect(() => {
+    setErrorMsg('');
     if (editingLog) {
       setDate(editingLog.date);
       setProvider(editingLog.provider);
@@ -92,7 +123,7 @@ export const FuelModal: React.FC<FuelModalProps> = ({
       setReceiptNumber(editingLog.receiptNumber || '');
       setNotes(editingLog.notes || '');
     } else {
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(getLocalDateString());
       setProvider(defaultProvider);
 
       const targetVeh = preselectedVehicleId
@@ -246,7 +277,12 @@ export const FuelModal: React.FC<FuelModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !saving) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header GLS */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">
@@ -397,7 +433,7 @@ export const FuelModal: React.FC<FuelModalProps> = ({
                 onChange={(e) => {
                   const p = e.target.value.toUpperCase();
                   setVehiclePlate(p);
-                  loadPreviousFuel(p, curOdoNum);
+                  loadPreviousFuel(p, curOdoNum, editingLog?.id);
                 }}
                 className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-md uppercase font-bold tracking-wider focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
               />

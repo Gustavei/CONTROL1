@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="glsBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0057B8" />
+      <stop offset="100%" stop-color="#002B5C" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#glsBg)" />
+  <rect x="64" y="128" width="384" height="256" rx="44" fill="#FFD100" />
+  <path d="M92 384h328v16a14 14 0 0 1-14 14H106a14 14 0 0 1-14-14v-16z" fill="#003E85" opacity="0.35" />
+  <text
+    x="256"
+    y="302"
+    text-anchor="middle"
+    font-family="Outfit, 'Plus Jakarta Sans', Arial, Helvetica, sans-serif"
+    font-weight="900"
+    font-size="148"
+    letter-spacing="-4"
+    fill="#002B5C"
+  >
+    GLS
+  </text>
+</svg>

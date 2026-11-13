@@ -108,9 +108,12 @@ export interface MileageLog {
   vehiclePlate: string;
   vehicleModel?: string;
   routeNumber?: string;
-  startKm: number; // KM Inicial da furgoneta
-  endKm: number; // KM Final da furgoneta
-  totalKm: number; // endKm - startKm
+  startKm: number; // Leitura do odômetro pela manhã (KM da Manhã)
+  endKm: number; // Mantido para compatibilidade (igual a startKm nos registros matinais)
+  previousKm?: number | null; // Leitura da manhã anterior usada no cálculo dia a dia
+  previousDate?: string | null; // Data da leitura anterior (YYYY-MM-DD)
+  totalKm: number; // KM rodados de uma manhã para a outra (startKm - previousKm)
+  readingType?: 'morning' | 'legacy';
   notes?: string;
   createdAt: string;
   updatedAt?: string;

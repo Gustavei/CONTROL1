@@ -36,6 +36,13 @@ import {
   generateFleetPdfReport,
   ReportType,
 } from '../services/pdfReportService.ts';
+import {
+  getLocalDateString,
+  getLocalMonthString,
+  getDaysAgoDateString,
+  getSavedEfficiencyThreshold,
+  saveEfficiencyThreshold,
+} from '../utils/date.ts';
 
 interface PdfReportModalProps {
   isOpen: boolean;
@@ -65,26 +72,36 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   // Routes report states
   const [routeReportType, setRouteReportType] = useState<ReportType>('comparative');
   const [selectedDate, setSelectedDate] = useState<string>(
-    routes.length > 0 ? routes[0].date : new Date().toISOString().split('T')[0]
+    routes.length > 0 ? routes[0].date : getLocalDateString()
   );
-  const [selectedMonth, setSelectedMonth] = useState<string>(
-    new Date().toISOString().substring(0, 7)
-  );
+  const [selectedMonth, setSelectedMonth] = useState<string>(getLocalMonthString());
 
   // Fleet report states
   const [fleetReportType, setFleetReportType] = useState<ReportType>('fleet_complete');
   const [fleetProvider, setFleetProvider] = useState<'all' | 'Oscar' | 'Tiago'>('all');
-  const [minEfficiencyThreshold, setMinEfficiencyThreshold] = useState<number>(9.5);
+  const [minEfficiencyThreshold, setMinEfficiencyThreshold] = useState<number>(() =>
+    getSavedEfficiencyThreshold(10.0)
+  );
   const [fleetPeriodLabel, setFleetPeriodLabel] = useState<string>('Histórico Consolidado 2026');
 
   const [isGenerating, setIsGenerating] = useState(false);
 
-  // Sync initial category when modal opens or initialCategory changes
+  // Sync initial category and shared efficiency threshold when modal opens
   useEffect(() => {
-    if (isOpen && initialCategory) {
-      setCategory(initialCategory);
+    if (isOpen) {
+      if (initialCategory) setCategory(initialCategory);
+      setMinEfficiencyThreshold(getSavedEfficiencyThreshold(10.0));
     }
   }, [isOpen, initialCategory]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isGenerating) onClose();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [isOpen, isGenerating, onClose]);
 
   if (!isOpen) return null;
 
@@ -94,9 +111,9 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       return routes.filter((r) => r.date === selectedDate);
     }
     if (routeReportType === 'weekly') {
-      const d = new Date(selectedDate);
-      d.setDate(d.getDate() - 7);
-      const startStr = d.toISOString().split('T')[0];
+      const [y, m, d] = selectedDate.split('-').map(Number);
+      const base = new Date(y, (m || 1) - 1, d || 1);
+      const startStr = getDaysAgoDateString(7, base);
       return routes.filter((r) => r.date >= startStr && r.date <= selectedDate);
     }
     if (routeReportType === 'monthly') {
@@ -133,6 +150,10 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   const filteredFuel = fleetProvider === 'all'
     ? fuelLogs
     : fuelLogs.filter((f) => f.provider === fleetProvider);
+
+  const filteredMaintenance = fleetProvider === 'all'
+    ? maintenanceLogs
+    : maintenanceLogs.filter((m) => m.provider === fleetProvider);
 
   const totalFleetKm = filteredMileage.reduce((acc, m) => acc + (m.totalKm || 0), 0);
   const totalFuelValue = filteredFuel.reduce((acc, f) => acc + (f.totalCost || 0), 0);
@@ -243,7 +264,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
       vehicles: filteredVehicles,
       mileageLogs: filteredMileage,
       fuelLogs: filteredFuel,
-      maintenanceLogs: fleetProvider === 'all' ? maintenanceLogs : maintenanceLogs.filter((m) => m.provider === fleetProvider),
+      maintenanceLogs: filteredMaintenance,
       minEfficiencyThreshold,
     });
   };
@@ -281,7 +302,7 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
     {
       id: 'fleet_mileage' as ReportType,
       title: 'Controle de Quilometragem Diária',
-      desc: 'Registro completo de KM inicial, KM final, rotas associadas, condutores e médias de rodagem diária',
+      desc: 'Leitura matinal diária, distância rodada de um dia para o outro, rotas associadas e médias de rodagem',
       icon: Gauge,
       tag: 'Operacional Diário',
     },
@@ -334,7 +355,12 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in"
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isGenerating) onClose();
+      }}
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full overflow-hidden flex flex-col max-h-[92vh]">
         {/* Modal Header */}
         <div className="bg-[#0057B8] text-white p-5 flex items-center justify-between border-b-4 border-[#FFD100]">
@@ -497,7 +523,11 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                     </label>
                     <select
                       value={minEfficiencyThreshold}
-                      onChange={(e) => setMinEfficiencyThreshold(parseFloat(e.target.value))}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setMinEfficiencyThreshold(val);
+                        saveEfficiencyThreshold(val);
+                      }}
                       className="w-full px-2.5 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-[#0057B8]"
                     >
                       <option value={8.0}>8.0 KM/L (Tolerância Alta)</option>
@@ -557,8 +587,8 @@ export const PdfReportModal: React.FC<PdfReportModalProps> = ({
                   </div>
                   <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-xs">
                     <span className="text-[10px] text-slate-400 block font-bold">MANUTENÇÕES</span>
-                    <span className="text-sm font-bold text-indigo-700">
-                      {maintenanceLogs.length} ordens
+                    <span className="text-sm font-bold text-indigo-700 tabular-nums">
+                      {filteredMaintenance.length} ordens
                     </span>
                   </div>
                 </div>
